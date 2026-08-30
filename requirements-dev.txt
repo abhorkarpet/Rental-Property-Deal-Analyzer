@@ -1,0 +1,6 @@
+# Tooling for the offline data build, not needed to run the app.
+# The app reads the committed tables in data/ and never parses a workbook.
+#
+#   pip install -r requirements-dev.txt
+#   python tools/build_hpi_table.py
+openpyxl

@@ -5,3 +5,11 @@ __pycache__/
 CLAUDE.md
 .claude/
 docs/plans
+.rentcast_usage.json
+.rentcast_market_cache.json
+.rentcast_tax_cache.json
+
+# Workbooks downloaded by tools/build_hpi_table.py (the committed
+# data/*.json.gz tables are the artifact, not these)
+data/.fhfa/
+.server.log

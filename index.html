@@ -655,6 +655,142 @@
   .badge-fail { background: var(--red-bg); color: var(--red); }
   .badge-zillow { background: rgba(0,106,255,0.15); color: #3b82f6; font-size: 0.68rem; }
 
+  /* Field provenance. A modelled number must never read as a fact. */
+  .badge-redfin    { background: rgba(200,32,52,0.15);  color: #ef4444; font-size: 0.68rem; }
+  .badge-rentcast  { background: rgba(16,185,129,0.15); color: #10b981; font-size: 0.68rem; }
+  .badge-pdf       { background: rgba(139,92,246,0.15); color: #a78bfa; font-size: 0.68rem; }
+  .badge-ai        { background: rgba(245,158,11,0.15); color: #f59e0b; font-size: 0.68rem; }
+  .badge-estimated { background: rgba(148,163,184,0.18); color: #94a3b8; font-size: 0.68rem; }
+  .badge-fhfa      { background: rgba(56,189,248,0.15); color: #38bdf8; font-size: 0.68rem; }
+
+  .whatif-empty {
+    padding: 28px; border: 1px dashed var(--border); border-radius: 8px;
+    color: var(--text-muted); font-size: 0.9rem; text-align: center; line-height: 1.6;
+  }
+  .whatif-grid { display: grid; grid-template-columns: 320px 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 860px) { .whatif-grid { grid-template-columns: 1fr; } }
+  .whatif-headline {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .wf-stat { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
+  .wf-stat .wf-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+  .wf-stat .wf-value { font-size: 1.25rem; font-weight: 700; margin-top: 3px; }
+  .wf-stat .wf-delta { font-size: 0.74rem; margin-top: 2px; color: var(--text-muted); }
+  .wf-stat .wf-value.positive { color: var(--green); }
+  .wf-stat .wf-value.negative { color: var(--red); }
+  .wf-row { margin-bottom: 14px; }
+  .wf-row .wf-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.82rem; }
+  .wf-row .wf-name { color: var(--text-muted); }
+  .wf-row .wf-cur { font-weight: 700; }
+  .wf-row .wf-cur.moved { color: var(--accent); }
+  .wf-row input[type=range] { width: 100%; margin-top: 5px; accent-color: var(--accent); }
+  .wf-row .wf-seed { font-size: 0.7rem; color: var(--text-muted); }
+  .wf-group { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
+  .wf-group > summary {
+    cursor: pointer; padding: 9px 12px; font-size: 0.82rem; font-weight: 600;
+    display: flex; align-items: center; gap: 8px; list-style: none;
+  }
+  .wf-group > summary::-webkit-details-marker { display: none; }
+  .wf-group > summary::before {
+    content: '\25B8'; color: var(--text-muted); font-size: 0.7rem;
+    transition: transform 0.15s;
+  }
+  .wf-group[open] > summary::before { transform: rotate(90deg); }
+  .wf-group-title { flex: 1; }
+  .wf-group-badge {
+    font-size: 0.68rem; font-weight: 600; color: var(--accent);
+    background: rgba(99,102,241,0.15); border-radius: 999px; padding: 1px 8px;
+  }
+  .wf-group-body { padding: 2px 12px 10px; }
+  .whatif-actions { margin-top: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .whatif-dirty { font-size: 0.8rem; color: var(--text-muted); }
+  .whatif-table-wrap { overflow-x: auto; margin-top: 18px; }
+  .wf-chart-legend { display: flex; gap: 16px; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px; flex-wrap: wrap; }
+  .wf-chart-legend span::before {
+    content: ''; display: inline-block; width: 10px; height: 3px;
+    margin-right: 5px; vertical-align: middle;
+  }
+  .wf-chart-legend .lg-val::before { background: #6366f1; }
+  .wf-chart-legend .lg-eq::before { background: #10b981; }
+  .wf-chart-legend .lg-loan::before { background: #ef4444; }
+
+  .upload-row {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; margin: 10px 0 4px;
+  }
+  .upload-hint { font-size: 0.78rem; color: var(--text-muted); }
+  .upload-btn { cursor: pointer; }
+  .upload-status { font-size: 0.78rem; color: var(--text-muted); }
+
+  .confirm-panel {
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 12px 14px; margin: 10px 0; background: rgba(99,102,241,0.06);
+  }
+  .confirm-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .confirm-list {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 6px 16px; font-size: 0.84rem; margin-bottom: 10px;
+  }
+  .confirm-list .k { color: var(--text-muted); }
+  .confirm-actions { display: flex; gap: 8px; }
+
+  .quota-gate {
+    border: 1px solid var(--amber, #f59e0b); border-radius: 8px;
+    padding: 12px 14px; margin: 10px 0;
+    background: rgba(245,158,11,0.08); font-size: 0.85rem;
+  }
+  .quota-gate-actions {
+    display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap; margin-top: 10px;
+  }
+  .quota-remember { font-size: 0.78rem; color: var(--text-muted); }
+  .usage-note { font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0; }
+
+  .app-version {
+    font-size: 0.72rem; color: var(--text-muted);
+    opacity: 0.65; margin-top: 6px; letter-spacing: 0.3px;
+  }
+
+  /* Glossary tooltips */
+  .tip-wrap { position: relative; display: inline-block; margin-left: 5px; }
+  .tip-btn {
+    width: 15px; height: 15px; line-height: 13px; padding: 0;
+    border-radius: 50%; border: 1px solid var(--text-muted);
+    background: transparent; color: var(--text-muted);
+    font-size: 0.62rem; font-weight: 700; cursor: pointer;
+    opacity: 0.55; transition: opacity .15s, color .15s, border-color .15s;
+    vertical-align: middle; text-transform: none; letter-spacing: 0;
+  }
+  .tip-btn:hover, .tip-btn:focus-visible {
+    opacity: 1; color: var(--accent); border-color: var(--accent); outline: none;
+  }
+  .tip-pop {
+    display: none; position: absolute; z-index: 60; left: 50%;
+    transform: translateX(-50%); top: calc(100% + 8px);
+    width: max-content; max-width: min(300px, 78vw);
+    background: var(--card-bg, #1b1f2a); color: var(--text, #e5e7eb);
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 10px 12px; font-size: 0.78rem; line-height: 1.45;
+    font-weight: 400; text-align: left; text-transform: none; letter-spacing: 0;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45); white-space: normal;
+  }
+  .tip-pop.open { display: block; }
+  .tip-text { display: block; }
+  .tip-link {
+    display: inline-block; margin-top: 8px;
+    color: var(--accent); text-decoration: none; font-weight: 600;
+  }
+  .tip-link:hover { text-decoration: underline; }
+  /* Keep the popover on-screen near the right edge of a grid. */
+  .metric-card:nth-child(3n) .tip-pop, .detail-grid .metric-card:last-child .tip-pop {
+    left: auto; right: 0; transform: none;
+  }
+  @media (max-width: 640px) {
+    .tip-pop { position: fixed; left: 8px; right: 8px; top: auto; bottom: 12px;
+               transform: none; max-width: none; width: auto; }
+  }
+
   /* Detailed metrics grid */
   .detail-grid {
     display: grid;
@@ -704,7 +840,54 @@
   .pillar-card .pillar-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
   .pillar-card .pillar-value { font-size: 1.1rem; font-weight: 700; }
   .pillar-card .pillar-pct { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+  .pillar-card .pillar-alt {
+    font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;
+    padding-top: 5px; border-top: 1px dashed var(--border);
+  }
   .pillar-card.pillar-total { border-color: var(--accent); background: rgba(99,102,241,0.08); }
+
+  /* Exit costs and the appreciation range. Both exist to keep a modelled
+     number from reading like a promise. */
+  .exit-block, .appr-band {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin-top: 16px; background: var(--card-alt, rgba(255,255,255,0.02));
+  }
+  .exit-block h4, .appr-band h4 {
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin: 0 0 10px; font-weight: 700;
+  }
+  .exit-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 0.88rem; }
+  .exit-row .exit-label { color: var(--text-muted); }
+  .exit-row.exit-sum { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; font-weight: 700; }
+  .exit-row .neg { color: var(--red); }
+  .exit-row .pos { color: var(--green); }
+  .exit-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
+
+  .band-scale { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+  .band-cell {
+    text-align: center; padding: 10px 6px; border-radius: 6px;
+    background: rgba(148,163,184,0.08); border: 1px solid transparent;
+    font: inherit; color: inherit; cursor: pointer; transition: border-color .12s, background .12s;
+  }
+  .band-cell:hover { border-color: var(--text-muted); }
+  .band-cell.band-active { border-color: var(--accent); background: rgba(99,102,241,0.14); }
+  .band-cell .band-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+  .band-cell .band-value { font-size: 1rem; font-weight: 700; margin-top: 3px; }
+  .band-cell .band-note { font-size: 0.68rem; color: var(--text-muted); margin-top: 4px; line-height: 1.35; }
+  .band-cell.band-low  { background: rgba(239,68,68,0.10); }
+  .band-cell.band-high { background: rgba(16,185,129,0.10); }
+  .band-hint { text-transform: none; letter-spacing: 0; font-weight: 400; opacity: 0.75; }
+  .band-custom { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px; }
+  @media (max-width: 640px) { .band-scale { grid-template-columns: repeat(2, 1fr); } }
+  /* Stated plainly. This is context on how volatile the market has been, not
+     a warning, and alarm styling made it read as a prediction. */
+  .band-worst { font-size: 0.8rem; line-height: 1.5; color: var(--text-muted); margin-top: 8px; }
+
+  .growth-warning {
+    font-size: 0.83rem; line-height: 1.5; margin-top: 14px; padding: 10px 12px;
+    border-radius: 6px; background: rgba(245,158,11,0.10);
+    border-left: 3px solid #f59e0b; color: var(--text);
+  }
 
   .factor-list { margin-bottom: 20px; }
 
@@ -1200,6 +1383,7 @@
   <header>
     <h1>Rental Property Deal Analyzer</h1>
     <p>Real-time investment metrics &amp; AI-powered analysis</p>
+    <div class="app-version" id="appVersion">v1.3.0</div>
   </header>
 
   <!-- Wizard Navigation -->
@@ -1251,7 +1435,18 @@
       <button class="active" data-mode="single" onclick="toggleSearchMode('single')">Single Property</button>
       <button data-mode="search" onclick="toggleSearchMode('search')">Neighborhood Search</button>
       <button data-mode="smart" onclick="toggleSearchMode('smart')">Smart Deal Finder</button>
+      <button data-mode="whatif" onclick="toggleSearchMode('whatif')">What-If</button>
     </div>
+
+    <div class="quota-gate" id="quotaGate" style="display:none;">
+      <div id="quotaGateMsg"></div>
+      <div class="quota-gate-actions">
+        <button class="btn btn-small btn-secondary" type="button" id="quotaGateFree">Use free estimate</button>
+        <button class="btn btn-small" type="button" id="quotaGateSpend">Spend 1 request</button>
+        <label class="quota-remember"><input type="checkbox" id="quotaGateRemember"> don't ask again this session</label>
+      </div>
+    </div>
+    <div id="rentcastUsage" class="usage-note" style="display:none;"></div>
 
     <!-- Cloud demo notice (hidden by default, shown via JS when __CLOUD_DEMO__ is set) -->
     <div id="cloudDemoNotice" style="display:none;background:rgba(99,102,241,0.12);border:1px solid var(--accent);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px;">
@@ -1274,6 +1469,29 @@
         </button>
       </div>
       <div class="url-error" id="urlError"></div>
+
+      <!-- Fallback ladder: scrape -> PDF -> screenshot -> manual entry -->
+      <div class="upload-row" id="uploadRow">
+        <span class="upload-hint">Blocked or missing data? Upload the listing instead:</span>
+        <label class="btn btn-small upload-btn" for="uploadPdf">Upload PDF</label>
+        <input type="file" id="uploadPdf" accept="application/pdf" style="display:none;">
+        <label class="btn btn-small upload-btn" for="uploadShot" id="uploadShotLabel">Upload Screenshot</label>
+        <input type="file" id="uploadShot" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none;">
+        <span id="uploadStatus" class="upload-status"></span>
+      </div>
+
+      <!-- Extracted values are provisional until confirmed here. -->
+      <div class="confirm-panel" id="uploadConfirm" style="display:none;">
+        <div class="confirm-head">
+          <strong>Check these before we use them</strong>
+          <span id="uploadConfirmSource" class="badge badge-estimated"></span>
+        </div>
+        <div id="uploadConfirmList" class="confirm-list"></div>
+        <div class="confirm-actions">
+          <button class="btn btn-small" type="button" id="uploadConfirmApply">Use these values</button>
+          <button class="btn btn-small btn-secondary" type="button" id="uploadConfirmCancel">Discard</button>
+        </div>
+      </div>
 
       <div class="property-card" id="propertyCard">
         <img id="propImage" alt="Property photo">
@@ -1309,21 +1527,45 @@
         </div>
         <div class="input-group">
           <label for="valueGrowth">Property Value Growth (%/yr)</label>
-          <input type="number" id="valueGrowth" value="3" min="0" max="50" step="0.5">
+          <input type="number" id="valueGrowth" value="3" min="-25" max="50" step="0.5">
+          <div class="usage-note" id="valueGrowthNote" style="display:none;"></div>
         </div>
         <div class="input-group">
           <label for="sqft">Square Footage</label>
           <input type="number" id="sqft" value="" min="0" step="1" placeholder="Optional">
         </div>
         <div class="input-group">
-          <label for="buildingPct">Building Value % (for depreciation)</label>
-          <input type="number" id="buildingPct" value="80" min="0" max="100" step="1">
+          <label for="yearBuilt">Year Built</label>
+          <input type="number" id="yearBuilt" value="" min="1500" max="2035" step="1" placeholder="Optional">
+          <div class="usage-note" id="yearBuiltNote" style="display:none;"></div>
         </div>
         <div class="input-group">
-          <label for="taxRate">Marginal Tax Rate (%)</label>
-          <input type="number" id="taxRate" value="25" min="0" max="50" step="1">
+          <label for="holdYears">Holding Period (years)</label>
+          <select id="holdYears">
+            <option value="5">5 years</option>
+            <option value="10" selected>10 years</option>
+            <option value="15">15 years</option>
+            <option value="20">20 years</option>
+            <option value="30">30 years</option>
+          </select>
+          <div class="usage-note" id="holdYearsNote" style="display:none;"></div>
+        </div>
+        <div class="input-group">
+          <label for="sellingCostPct">Selling Costs (% of sale price)</label>
+          <input type="number" id="sellingCostPct" value="7" min="0" max="20" step="0.5">
         </div>
       </div>
+
+      <details style="margin-top:14px;">
+        <summary style="cursor:pointer;font-weight:600;">Optional tax context (not included in returns)</summary>
+        <div class="input-grid" style="margin-top:12px;">
+          <div class="input-group">
+            <label for="buildingPct">Building Value %</label>
+            <input type="number" id="buildingPct" value="80" min="0" max="100" step="1">
+          </div>
+        </div>
+        <p class="usage-note" style="display:block;margin-top:8px;">Used only to show a rough annual depreciation amount. It does not change cash flow, profit, ROI, or IRR. Actual tax treatment depends on basis allocation, improvements, placed-in-service dates, ownership, and taxpayer circumstances.</p>
+      </details>
 
       <div class="step-buttons">
         <div class="left"><button class="btn btn-secondary" type="button" onclick="tryExampleDeal()">&#9733; Try Example Deal</button></div>
@@ -1336,7 +1578,7 @@
     <!-- ===== Neighborhood Search Mode ===== -->
     <div id="searchMode" style="display:none">
       <div class="section-title">Neighborhood Search</div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Search for listings in a zip code, city, or neighborhood. Results are scored using your target rent to find the best deals.</p>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Search for listings in a zip code, city, or neighborhood. Each listing is scored against its own estimated rent for that area and size — set an Override Rent only if you want one figure applied to every result.</p>
 
       <div class="search-filters">
         <div class="input-group">
@@ -1371,8 +1613,8 @@
           </select>
         </div>
         <div class="input-group">
-          <label for="searchTargetRent">Target Monthly Rent ($) *</label>
-          <input type="number" id="searchTargetRent" min="0" step="50" placeholder="Your rent estimate">
+          <label for="searchTargetRent">Override Rent ($) <span style="font-weight:400;opacity:0.7;">optional</span></label>
+          <input type="number" id="searchTargetRent" min="0" step="50" placeholder="Auto-estimated per listing">
         </div>
         <div class="input-group">
           <label for="searchMaxResults">Max Results</label>
@@ -1518,6 +1760,34 @@
       </div>
     </div>
 
+    <!-- ===== What-If Mode ===== -->
+    <div id="whatifMode" style="display:none">
+      <div class="section-title">What-If</div>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
+        Drag any assumption and watch the whole deal move. Nothing here touches your
+        analysis until you press Apply, so you can push the numbers around freely.
+      </p>
+      <div id="whatifEmpty" class="whatif-empty">
+        Nothing to explore yet — fill in a property on the Single Property tab first,
+        then come back. This page starts from whatever you have entered there.
+      </div>
+      <div id="whatifBody" style="display:none">
+        <div class="whatif-headline" id="whatifHeadline"></div>
+        <div class="whatif-grid">
+          <div class="whatif-sliders" id="whatifSliders"></div>
+          <div class="whatif-viz">
+            <div id="whatifChart"></div>
+            <div class="whatif-table-wrap"><table class="sensitivity-table" id="whatifTable"></table></div>
+          </div>
+        </div>
+        <div class="whatif-actions">
+          <button class="btn" type="button" onclick="whatifApply()">Apply to my analysis</button>
+          <button class="btn btn-secondary" type="button" onclick="whatifReset()">Reset sliders</button>
+          <span class="whatif-dirty" id="whatifDirty"></span>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- ============ STEP 2: Loan Details ============ -->
@@ -1536,7 +1806,7 @@
       <div class="input-grid">
         <div class="input-group">
           <label for="downPayment">Down Payment (%)</label>
-          <input type="number" id="downPayment" value="20" min="0" max="100" step="0.5">
+          <input type="number" id="downPayment" value="25" min="0" max="100" step="0.5">
           <div class="helper" id="dpHelper">$40,000</div>
         </div>
         <div class="input-group">
@@ -1637,11 +1907,14 @@
     <div class="input-grid">
       <div class="input-group">
         <label for="propertyTaxes">Property Taxes / yr ($)</label>
-        <input type="number" id="propertyTaxes" value="3000" min="0" step="100">
+        <input type="number" id="propertyTaxes" min="0" step="100">
+        <div class="usage-note" id="taxRateNote" style="display:none;"></div>
+        <div class="usage-note" id="sellerTaxNote" style="display:none;"></div>
       </div>
       <div class="input-group">
         <label for="insurance">Insurance / yr ($)</label>
         <input type="number" id="insurance" value="1000" min="0" step="50">
+        <div class="usage-note" id="insuranceNote" style="display:none;"></div>
       </div>
       <div class="input-group">
         <label for="maintenance">Repairs &amp; Maintenance (% of rent)</label>
@@ -1650,10 +1923,12 @@
       <div class="input-group">
         <label for="vacancy">Vacancy Rate (%)</label>
         <input type="number" id="vacancy" value="8" min="0" max="100" step="0.5">
+        <div class="usage-note" id="vacancyNote" style="display:none;"></div>
       </div>
       <div class="input-group">
         <label for="capex">CapEx Reserve (% of rent)</label>
         <input type="number" id="capex" value="5" min="0" max="100" step="0.5">
+        <div class="usage-note" id="reserveNote" style="display:none;"></div>
       </div>
       <div class="input-group">
         <label for="management">Property Management (%)</label>
@@ -1723,7 +1998,7 @@
       <div class="metric-card"><div class="label">Monthly Cash Flow</div><div class="value" id="resMonthlyCF">--</div></div>
       <div class="metric-card"><div class="label">Cash-on-Cash Return</div><div class="value" id="resCoC">--</div></div>
       <div class="metric-card"><div class="label">Cap Rate</div><div class="value" id="resCapRate">--</div></div>
-      <div class="metric-card"><div class="label">5yr Annualized ROI</div><div class="value" id="res5yrROI">--</div></div>
+      <div class="metric-card"><div class="label"><span id="roiLabel">10yr</span> Pre-Tax Annualized ROI</div><div class="value" id="res5yrROI">--</div></div>
     </div>
 
     <!-- B) Quick Rules -->
@@ -1756,10 +2031,17 @@
       <div class="metric-card"><div class="label">Total Cash to Close</div><div class="value" id="resCashClose">--</div></div>
       <div class="metric-card"><div class="label">Operating Expense Ratio</div><div class="value" id="resOER">--</div></div>
       <div class="metric-card"><div class="label">CF per Unit (monthly)</div><div class="value" id="resCFPerUnit">--</div></div>
-      <div class="metric-card"><div class="label">Annual Depreciation</div><div class="value" id="resDepreciation">--</div></div>
       <div class="metric-card" id="resPricePerSqftCard" style="display:none;"><div class="label">Price / Sqft</div><div class="value" id="resPricePerSqft">--</div></div>
       <div class="metric-card" id="resRentPerSqftCard" style="display:none;"><div class="label">Rent / Sqft</div><div class="value" id="resRentPerSqft">--</div></div>
     </div>
+
+    <details class="table-section" id="taxContextSection">
+      <summary class="section-title" style="cursor:pointer;">Optional Tax Context — Excluded From Returns</summary>
+      <div class="detail-grid" style="margin-top:12px;">
+        <div class="metric-card"><div class="label">Rough Annual Depreciation</div><div class="value" id="resDepreciation">--</div></div>
+      </div>
+      <p class="exit-note">Informational estimate only. The analyzer does not estimate income-tax savings, passive-loss usability, capital-gains tax, depreciation-related tax, state tax, or after-tax returns.</p>
+    </details>
 
     <!-- D) Deal Score -->
     <div class="deal-score" id="dealScore">
@@ -1776,8 +2058,11 @@
 
     <!-- D2) Investment Summary -->
     <div class="invest-summary" id="investSummary">
-      <div class="section-title">Investment Summary — 5-Year Total Return</div>
+      <div class="section-title">Investment Summary — <span id="summaryHoldLabel">10-Year</span> Pre-Tax Profit</div>
       <div class="return-pillars" id="returnPillars"></div>
+      <div class="growth-warning" id="growthWarning" style="display:none;"></div>
+      <div class="exit-block" id="exitBlock" style="display:none;"></div>
+      <div class="appr-band" id="apprBand" style="display:none;"></div>
       <div class="section-title" style="font-size:0.95rem;">Deal Scorecard</div>
       <div class="factor-list" id="factorList"></div>
       <div class="section-title" style="font-size:0.95rem; margin-top:16px;">Strategy Fit</div>
@@ -1786,7 +2071,7 @@
 
     <!-- E) 5-Year Projection -->
     <div class="table-section">
-      <div class="section-title">5-Year Projection</div>
+      <div class="section-title"><span id="projHoldLabel">10-Year</span> Projection</div>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
@@ -1835,6 +2120,7 @@
         <span class="leg-loan">Loan Balance</span>
       </div>
       <div id="equityBars"></div>
+      <div class="exit-note" id="equityChartNote"></div>
     </div>
 
     <!-- H) AI Analysis -->
@@ -1933,9 +2219,61 @@
   var maxVisitedStep = 1;
   var propertyType = 'sfh';
   var appMode = 'single'; // 'single' or 'search'
-  var autoFilledFields = {}; // track fields filled from Zillow
+  var autoFilledFields = {}; // track fields filled automatically
   var userEditedFields = {}; // track fields manually edited by user
+  var fieldSources = {};     // where each auto-filled value came from
+  var rentcastAllowOverage = false; // session-only: never persisted, so a
+                                    // forgotten toggle can't run up a bill
+
+  // Investment properties are not owner-occupied, so conventional financing
+  // typically requires 25% down rather than 20%. Used by the search-grid quick
+  // score; the wizard reads the Down Payment field, which defaults to the same.
+  var INVESTOR_DOWN_PAYMENT = 0.25;
+
+  // How far the year-by-year projection runs. Five years drives the headline
+  // metrics; the rest exists so a hold can be examined over its real life.
+  var PROJECTION_YEARS = 30;
+
+  var SOURCE_LABELS = {
+    zillow: 'Zillow', redfin: 'Redfin', rentcast_avm: 'RentCast',
+    rentcast_market: 'RentCast area', pdf: 'PDF', pdf_ai: 'PDF (AI)',
+    screenshot_ai: 'Screenshot (AI)', estimated: 'Estimated', fhfa: 'FHFA'
+  };
+
+  function markSource(field, source) {
+    autoFilledFields[field] = true;
+    fieldSources[field] = source;
+  }
+
+  // ======================================================================
+  // RentCast quota — crossing the monthly limit costs money, so the user
+  // decides, rather than us silently spending or silently degrading.
+  // ======================================================================
+  function updateUsageDisplay(usage) {
+    var el = $('rentcastUsage');
+    if (!el || !usage || !usage.limit) return;
+    el.textContent = 'RentCast: ' + usage.count + '/' + usage.limit + ' requests this month';
+    el.style.display = '';
+  }
+
+  function showQuotaGate(gate, onSpend) {
+    var el = $('quotaGate');
+    if (!el) return;
+    if (rentcastAllowOverage) { if (onSpend) onSpend(); return; }
+    $('quotaGateMsg').textContent = gate.message || 'RentCast monthly limit reached.';
+    el.style.display = '';
+    $('quotaGateFree').onclick = function() { el.style.display = 'none'; };
+    $('quotaGateSpend').onclick = function() {
+      if ($('quotaGateRemember').checked) rentcastAllowOverage = true;
+      el.style.display = 'none';
+      // Authorize *this* call explicitly. Passing the session flag alone meant
+      // "Spend 1 request" did nothing unless "don't ask again" was also ticked:
+      // the retry re-sent allow_overage:false and the server gated it again.
+      if (onSpend) onSpend(true);
+    };
+  }
   var lastCalcResults = {};
+  var lastTaxContext = {};
   window.scrapedData = null; // store fetched Zillow data for results display
 
   // ======================================================================
@@ -2066,6 +2404,289 @@
   }
 
   // ======================================================================
+  // Carrying costs — property tax and insurance as local rates
+  // ======================================================================
+  // Rate-driven, not bill-driven: a sale reassesses the property at roughly
+  // the purchase price, so the seller's current bill can badly understate
+  // what the buyer will owe (most visibly in California under Prop 13).
+  var carryingRates = null;
+
+  async function applyCarryingCostRates(forceRefetch, allowOverage) {
+    var price = val($('purchasePrice'), 0);
+    if (!price) return;
+    var address = $('propName').value.trim() || (scrapedData && scrapedData.address) || '';
+
+    if (!carryingRates || forceRefetch) {
+      try {
+        var resp = await fetch('/api/tax-rate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            address: address, price: price,
+            allow_overage: allowOverage || rentcastAllowOverage,
+            // Both are already scraped or extracted; they let the server size
+            // reserves off the building instead of off the rent.
+            sqft: val($('sqft'), 0) || (scrapedData && scrapedData.sqft) || null,
+            yearBuilt: val($('yearBuilt'), 0) || (scrapedData && scrapedData.yearBuilt) || null,
+            rent: getTotalRent() || null
+          })
+        });
+        var data = await resp.json();
+        if (!resp.ok || data.error) return;
+        if (data.quota_gate) showQuotaGate(data.quota_gate, function(ok) { applyCarryingCostRates(true, ok); });
+        if (data.usage) updateUsageDisplay(data.usage);
+        carryingRates = data;
+      } catch (err) { return; }
+    }
+
+    if (!userEditedFields['propertyTaxes'] && carryingRates.tax) {
+      $('propertyTaxes').value = Math.round(price * carryingRates.tax.rate);
+      markSource('propertyTaxes', carryingRates.tax.source === 'zip' ? 'rentcast_market' : 'estimated');
+      var note = $('taxRateNote');
+      if (note) {
+        note.textContent = (carryingRates.tax.rate * 100).toFixed(2) + '% — ' + carryingRates.tax.label;
+        note.style.display = '';
+      }
+    }
+    if (!userEditedFields['insurance'] && carryingRates.insurance
+        && carryingRates.insurance.annual) {
+      // An absolute premium now, not a share of price — insurers rate on what
+      // it costs to rebuild the structure, and land is not insured.
+      $('insurance').value = carryingRates.insurance.annual;
+      markSource('insurance', 'estimated');
+      var inote = $('insuranceNote');
+      if (inote) {
+        inote.textContent = '$' + fmtInt(carryingRates.insurance.annual / 12) +
+          '/mo — ' + carryingRates.insurance.label;
+        inote.style.display = '';
+      }
+    }
+    applyReserves(carryingRates.reserves);
+    if (typeof calculate === 'function') calculate();
+  }
+
+  // Maintenance and CapEx sized off the building rather than the rent.
+  //
+  // A roof does not cost less in a cheap market, so a flat percentage of rent
+  // under-reserves wherever rent is low relative to construction cost — which
+  // is exactly where a screener is most likely to call something a good deal.
+  // The fields still hold percentages so nothing downstream changes; only the
+  // number in them is now property-specific.
+  function fillYearBuilt(year) {
+    if (!year || userEditedFields['yearBuilt']) return;
+    var el = $('yearBuilt');
+    if (!el || el.value) return;
+    el.value = year;
+    markSource('yearBuilt', 'redfin');
+  }
+
+  function applyReserves(res) {
+    if (!res) return;
+    // Age drives the reserve more than anything else, so say when it is missing
+    // rather than quietly assuming a mid-life house.
+    var yn = $('yearBuiltNote');
+    if (yn) {
+      if (res.age === null || res.age === undefined) {
+        yn.textContent = 'Unknown — reserves assume a mid-life house. Enter it for a closer figure.';
+        yn.style.display = '';
+      } else {
+        yn.style.display = 'none';
+      }
+    }
+    if (!userEditedFields['maintenance']) {
+      $('maintenance').value = res.maintenance_pct;
+      markSource('maintenance', 'estimated');
+    }
+    if (!userEditedFields['capex']) {
+      $('capex').value = res.capex_pct;
+      markSource('capex', 'estimated');
+    }
+    var note = $('reserveNote');
+    if (!note) return;
+    if (res.source === 'default') { note.style.display = 'none'; return; }
+    var text = res.label;
+    if (res.monthly_dollars) {
+      text = '$' + fmtInt(res.monthly_dollars) + '/mo for repairs and replacements \u2014 ' + res.label;
+    }
+    if (res.clamped) text += ' (capped \u2014 check square footage and rent)';
+    note.textContent = text;
+    note.style.display = '';
+  }
+
+  // The seller's bill is context, not the estimate — showing the gap is the
+  // point, since that jump is what a new buyer actually absorbs.
+  function showSellerTaxContext(annualTax) {
+    var note = $('sellerTaxNote');
+    if (!note || !annualTax) return;
+    note.textContent = 'Current owner pays $' + fmtInt(annualTax) + '/yr (pre-sale assessment)';
+    note.style.display = '';
+  }
+
+  // ======================================================================
+  // Property value growth — the local rate, and the spread around it
+  //
+  // Appreciation is the biggest single line in the 5-year return and was the
+  // last input still using a national guess. It now comes from that ZIP's own
+  // measured price history, and carries the range of five-year outcomes that
+  // history contains, because the average alone is the least useful part of it.
+  // ======================================================================
+  var appreciationProfile = null;
+
+  async function applyAppreciation(forceRefetch) {
+    if (appreciationProfile && !forceRefetch) { applyAppreciationToField(); return; }
+    var address = $('propName').value.trim() || (scrapedData && scrapedData.address) || '';
+    try {
+      var resp = await fetch('/api/appreciation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: address, holdYears: parseInt($('holdYears').value) || 10 })
+      });
+      var data = await resp.json();
+      if (!resp.ok || data.error) return;
+      appreciationProfile = data;
+    } catch (err) { return; }
+    applyAppreciationToField();
+    if (typeof calculate === 'function') calculate();
+  }
+
+  // The default is deliberately below what this ZIP historically did.
+  //
+  // A rate measured over 1995-2025 is what a market did, not what it will do,
+  // and that window contains a long decline in mortgage rates that cannot
+  // repeat. Underwriting near long-run inflation forces the deal to work on
+  // cash flow and leaves real appreciation as upside. The local history is not
+  // discarded — it drives the range, the worst case, and the Historical
+  // scenario, and it lowers the default further in markets that did worse.
+  function applyAppreciationToField() {
+    var p = appreciationProfile;
+    if (!p) return;
+    if (!userEditedFields['valueGrowth']) {
+      activeScenario = 'conservative';
+      $('valueGrowth').value = p.conservative_pct;
+      markSource('valueGrowth', p.source === 'default' ? 'estimated' : 'fhfa');
+    }
+    var note = $('valueGrowthNote');
+    if (note) {
+      note.textContent = p.conservative_pct < p.rate_pct
+        ? p.conservative_pct + '%/yr, held near inflation on purpose — ' + p.label +
+          ' averaged ' + p.rate_pct + '%. The gap is upside, not underwriting.'
+        : p.rate_pct + '%/yr — ' + p.label;
+      note.style.display = '';
+    }
+  }
+
+  // Which what-if the projections are currently running. Null once a rate is
+  // typed by hand, so a custom number is never mislabelled as a scenario.
+  var activeScenario = null;
+
+  window.setApprScenario = function(key, pct) {
+    activeScenario = key;
+    $('valueGrowth').value = pct;
+    // A scenario is not a manual edit — the field must stay auto-managed so a
+    // later address change can still refresh it.
+    userEditedFields['valueGrowth'] = false;
+    markSource('valueGrowth', 'fhfa');
+    if (typeof calculate === 'function') calculate();
+  };
+
+  // ======================================================================
+  // PDF / screenshot upload — the fallback when scraping is blocked
+  // ======================================================================
+  var pendingUpload = null;
+
+  var UPLOAD_LABELS = {
+    address: 'Address', price: 'Price', beds: 'Beds', baths: 'Baths',
+    sqft: 'Sq Ft', yearBuilt: 'Year Built', annualTax: 'Annual Tax',
+    hoaFee: 'HOA/mo', propertyType: 'Type'
+  };
+
+  async function handleUpload(input, kind) {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    var status = $('uploadStatus');
+    status.textContent = 'Reading ' + kind + '...';
+    $('uploadConfirm').style.display = 'none';
+
+    var form = new FormData();
+    form.append('file', file);
+    try {
+      var resp = await fetch('/api/extract-upload', { method: 'POST', body: form });
+      var data = {};
+      try { data = await resp.json(); } catch (e) { /* non-JSON error body */ }
+      if (!resp.ok || data.error) {
+        // Never show a content-free message: FastAPI validation errors arrive
+        // as `detail`, and some failures have no JSON body at all.
+        var msg = data.error;
+        if (!msg && data.detail) {
+          msg = Array.isArray(data.detail)
+            ? data.detail.map(function(d) { return d.msg || JSON.stringify(d); }).join('; ')
+            : String(data.detail);
+        }
+        if (!msg) msg = 'Upload failed (HTTP ' + resp.status + '). Check the app console for details.';
+        status.textContent = msg;
+        console.error('extract-upload failed', resp.status, data);
+        return;
+      }
+      status.textContent = '';
+      pendingUpload = data;
+      renderUploadConfirm(data);
+    } catch (err) {
+      status.textContent = 'Upload failed. Is the app still running?';
+    } finally {
+      input.value = '';
+    }
+  }
+
+  function renderUploadConfirm(data) {
+    var html = '';
+    Object.keys(UPLOAD_LABELS).forEach(function(key) {
+      var v = data.data[key];
+      if (v === null || v === undefined || v === '' || (key === 'hoaFee' && !v)) return;
+      var shown = (key === 'price' || key === 'annualTax' || key === 'hoaFee') ? '$' + fmtInt(v)
+                : (key === 'sqft') ? fmtInt(v) : v;
+      html += '<div><span class="k">' + UPLOAD_LABELS[key] + ':</span> <strong>' + esc(String(shown)) + '</strong></div>';
+    });
+    $('uploadConfirmList').innerHTML = html || '<div>Nothing readable was found.</div>';
+    $('uploadConfirmSource').textContent = SOURCE_LABELS[data.source] || data.source;
+    $('uploadConfirm').style.display = '';
+  }
+
+  function applyUpload() {
+    if (!pendingUpload) return;
+    var d = pendingUpload.data, source = pendingUpload.source;
+
+    if (d.price) {
+      $('purchasePrice').value = d.price; markSource('purchasePrice', source);
+      $('closingCosts').value = Math.round(d.price * 0.03);
+      userEditedFields['closingCosts'] = false;
+    }
+    if (d.address) { $('propName').value = d.address; markSource('propName', source); }
+    if (d.sqft) { $('sqft').value = d.sqft; markSource('sqft', source); }
+    if (d.hoaFee) { $('hoa').value = d.hoaFee; markSource('hoaFee', source); }
+    if (d.annualTax) showSellerTaxContext(d.annualTax);
+
+    scrapedData = Object.assign({}, scrapedData || {}, d);
+    fillYearBuilt(d.yearBuilt);
+    $('propAddress').textContent = d.address || 'Address unavailable';
+    var bits = [];
+    if (d.beds) bits.push(d.beds + ' bed');
+    if (d.baths) bits.push(d.baths + ' bath');
+    if (d.sqft) bits.push(fmtInt(d.sqft) + ' sqft');
+    $('propDetails').textContent = bits.join(' | ');
+    $('propImage').style.display = 'none';
+    $('propertyCard').classList.add('visible');
+
+    $('uploadConfirm').style.display = 'none';
+    $('uploadStatus').textContent = 'Applied. Check the values before relying on them.';
+    pendingUpload = null;
+
+    updateDpHelper();
+    applyCarryingCostRates(true);
+    applyAppreciation(true);
+    autoEstimateRent();
+  }
+
+  // ======================================================================
   // Zillow Scrape
   // ======================================================================
   window.fetchZillow = async function() {
@@ -2096,11 +2717,14 @@
 
       if (!resp.ok || data.error) {
         showUrlError(data.error || 'Failed to fetch property data.');
+        $('uploadStatus').textContent = 'Scraping failed — try uploading the listing instead.';
+        $('uploadRow').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         return;
       }
 
       // Store scraped data for results display
       scrapedData = data;
+      fillYearBuilt(data.yearBuilt);
 
       // Auto-fill fields
       if (data.price) {
@@ -2120,10 +2744,9 @@
         autoFilledFields['monthlyRent'] = true;
       }
 
-      if (data.annualTax) {
-        $('propertyTaxes').value = data.annualTax;
-        autoFilledFields['propertyTaxes'] = true;
-      }
+      // Not used as the estimate: this is the seller's pre-sale assessment,
+      // which understates the buyer's bill wherever assessments reset on sale.
+      if (data.annualTax) showSellerTaxContext(data.annualTax);
 
       if (data.hoaFee) {
         $('hoa').value = data.hoaFee;
@@ -2139,6 +2762,10 @@
         $('propName').value = data.address;
         autoFilledFields['propName'] = true;
       }
+
+      applyCarryingCostRates(true);
+      applyAppreciation(true);
+      autoEstimateRent();
 
       // Property type mapping
       if (data.propertyType) {
@@ -2213,6 +2840,11 @@
     $('singlePropertyMode').style.display = mode === 'single' ? '' : 'none';
     $('searchMode').style.display = mode === 'search' ? '' : 'none';
     $('smartMode').style.display = mode === 'smart' ? '' : 'none';
+    var wf = $('whatifMode');
+    if (wf) {
+      wf.style.display = mode === 'whatif' ? '' : 'none';
+      if (mode === 'whatif') whatifOpen();
+    }
     // Show cloud demo notice when search features are selected on hosted demo
     var cloudNotice = $('cloudDemoNotice');
     if (cloudNotice) {
@@ -2223,16 +2855,12 @@
     });
   };
 
-  window.runNeighborhoodSearch = async function() {
+  window.runNeighborhoodSearch = async function(allowOverage) {
     if (window.__CLOUD_DEMO__) { showSearchStatus('Search features are only available when running locally. Clone the repo and run python app.py.', true); return; }
     var location = $('searchLocation').value.trim();
     var targetRent = parseFloat($('searchTargetRent').value);
     if (!location) {
       showSearchStatus('Please enter a location (zip code or city).', true);
-      return;
-    }
-    if (!targetRent || targetRent <= 0) {
-      showSearchStatus('Please enter a target monthly rent.', true);
       return;
     }
 
@@ -2250,6 +2878,7 @@
         min_beds: parseInt($('searchMinBeds').value) || 0,
         property_type: $('searchPropType').value || null,
         max_results: parseInt($('searchMaxResults').value) || 20,
+        allow_overage: allowOverage || rentcastAllowOverage,
       };
       var resp = await fetch('/api/search', {
         method: 'POST',
@@ -2265,12 +2894,24 @@
         showSearchStatus('No listings found for "' + esc(location) + '". Try adjusting your filters or searching a different area.', true);
         return;
       }
-      $('searchStatus').style.display = 'none';
       var searchRate = parseFloat($('interestRate').value) / 100 || null;
       searchResults = data.listings.map(function(l) {
         l._score = computeQuickScore(l, targetRent, searchRate);
         return l;
       });
+
+      // Without a rent for a listing there is nothing to score, so say so
+      // rather than rendering a page of zeroes.
+      var priced = searchResults.filter(function(l) { return l._score.numericScore > 0; });
+      if (priced.length === 0) {
+        showSearchStatus(
+          'Found ' + searchResults.length + ' listings, but no rent estimate is available for this area. '
+          + 'Enter an Override Rent to score them, or set RENTCAST_API_KEY for per-listing estimates.', true);
+      } else {
+        $('searchStatus').style.display = 'none';
+      }
+      if (data.quota_gate) { showQuotaGate(data.quota_gate, function(ok) { runNeighborhoodSearch(ok); }); }
+      if (data.rentcast_usage) { updateUsageDisplay(data.rentcast_usage); }
       searchSortCol = 'score';
       searchSortAsc = false;
       sortAndRenderSearch();
@@ -2293,7 +2934,11 @@
 
   function computeQuickScore(listing, userRent, mortgageRate) {
     var price = listing.price;
-    var rent = userRent;
+    // A rent typed by the user overrides everything; otherwise use this
+    // listing's own estimate. Applying one rent to every row would make cash
+    // flow, the 1% rule and GRM monotonic in price, collapsing the ranking
+    // into "cheapest first".
+    var rent = userRent || listing.estRent;
     var rate = mortgageRate || 0.07; // default 7% if not provided
     if (!price || price <= 0 || !rent || rent <= 0) return { stars: 0, numericScore: 0, details: [], cssClass: 'score-0' };
 
@@ -2306,13 +2951,13 @@
 
     // --- Common calculations ---
     var expenseRatio = price >= 250000 ? 0.45 : price >= 100000 ? 0.50 : 0.55;
-    var loanAmt = price * 0.8;
+    var loanAmt = price * (1 - INVESTOR_DOWN_PAYMENT);
     var monthlyRate = rate / 12;
     var nPayments = 360;
     var mortgage = monthlyRate > 0 ? loanAmt * (monthlyRate * Math.pow(1 + monthlyRate, nPayments)) / (Math.pow(1 + monthlyRate, nPayments) - 1) : 0;
     var noi = rent * (1 - expenseRatio);
     var cashFlow = noi - mortgage;
-    var downPayment = price * 0.2;
+    var downPayment = price * INVESTOR_DOWN_PAYMENT;
 
     // === 1. Cap Rate (aligned with full scorecard: 6%+ strong, 4%+ ok) ===
     var capRate = (rent * 12 * (1 - expenseRatio)) / price * 100;
@@ -2374,7 +3019,11 @@
     }
 
     // === 6. Estimated Year-1 Total Return ===
-    var yearlyAppreciation = price * 0.03;
+    // The listing carries its own ZIP's historical rate, so a row scores on
+    // the same appreciation assumption the analyzer will use for it. Falls
+    // back to 3% only when the search returned no local index.
+    var apprPct = (listing && typeof listing.apprPct === 'number') ? listing.apprPct : 3;
+    var yearlyAppreciation = price * apprPct / 100;
     var yearlyEquity = (mortgage * 12) - (loanAmt * monthlyRate * 12);
     var yearlyCashFlow = cashFlow * 12;
     var totalReturn = yearlyCashFlow + yearlyAppreciation + yearlyEquity;
@@ -2405,6 +3054,17 @@
       details.push({ text: 'Verify: may be land only', cls: 'warn' });
     } else if (price < 75000) {
       details.push({ text: 'Likely needs rehab — budget $20-50K+', cls: 'warn' });
+    }
+
+    // Say where the rent came from — the score is only as good as this input.
+    if (!userRent && listing.rentSource === 'rentcast_market') {
+      var comps = listing.rentSampleSize ? ', ' + listing.rentSampleSize + ' comps' : '';
+      details.push({ text: 'Rent: $' + fmtInt(rent) + '/mo est' + comps, cls: 'pass' });
+      if (listing.rentDaysOnMarket && listing.rentDaysOnMarket > 60) {
+        details.push({ text: 'Slow rental market: ' + listing.rentDaysOnMarket + 'd on market', cls: 'warn' });
+      }
+    } else if (userRent) {
+      details.push({ text: 'Rent: your $' + fmtInt(rent) + '/mo for all rows', cls: 'warn' });
     }
 
     // Flag when rent estimate seems unusually high relative to price
@@ -2525,11 +3185,28 @@
     if (l.sqft) details.push(fmtInt(l.sqft) + ' sqft');
     $('propDetails').textContent = details.join(' | ');
     $('propertyCard').classList.add('visible');
-    // If there's a Redfin URL, fetch full data for remaining fields
+
+    // Carry the search-grid attributes over so the rent estimate can be
+    // property-specific rather than area-wide.
+    scrapedData = Object.assign({}, scrapedData || {}, {
+      address: l.address, beds: l.beds, baths: l.baths, sqft: l.sqft,
+      // Redfin's grid cards do not show year built, so this is usually null
+      // here and arrives from the full scrape below. Carried anyway so the
+      // reserve model gets it whenever a source does provide it.
+      yearBuilt: l.yearBuilt || null
+    });
+    fillYearBuilt(l.yearBuilt);
+
+    // If there's a Redfin URL, fetch full data for remaining fields.
+    // fetchZillow triggers the rate and rent estimates itself on success;
+    // without a URL there is nothing more to scrape, so run them here.
     if (l.listingUrl) {
       fetchZillow();
     } else {
       smartAnalyzeActive = false;
+      applyCarryingCostRates(true);
+      applyAppreciation(true);
+      autoEstimateRent();
       goToStep(2);
     }
   };
@@ -2542,7 +3219,7 @@
   var smartSortCol = 'score';
   var smartSortAsc = false;
 
-  window.runSmartSearch = async function() {
+  window.runSmartSearch = async function(allowOverage) {
     if (window.__CLOUD_DEMO__) { showSmartStatus('Smart Deal Finder is only available when running locally. Clone the repo and run python app.py.', true); return; }
     var location = $('smartLocation').value.trim();
     if (!location) {
@@ -2569,6 +3246,8 @@
         body: JSON.stringify(body)
       });
       var data = await resp.json();
+      if (data.rentcast_usage) updateUsageDisplay(data.rentcast_usage);
+      if (data.quota_gate) showQuotaGate(data.quota_gate, function(ok) { runSmartSearch(ok); });
       if (!resp.ok || data.error) {
         showSmartStatus(data.error || 'Search failed.', true);
         return;
@@ -2604,7 +3283,11 @@
         if (data.mortgage_rate) {
           rentHtml += ' &middot; Scoring at <strong>' + data.mortgage_rate.toFixed(2) + '%</strong> rate';
         }
-        rentHtml += '<br><span style="color:var(--text-muted);font-size:0.78rem;">Assumptions: 20% down, 30yr fixed, expenses 45-55% of rent (tiered by price), 3% appreciation</span>';
+        var apprNote = data.appreciation
+          ? data.appreciation.conservative_pct + '% appreciation (held near inflation; ' +
+            data.appreciation.label + ' averaged ' + data.appreciation.rate_pct + '%)'
+          : '3% appreciation';
+        rentHtml += '<br><span style="color:var(--text-muted);font-size:0.78rem;">Assumptions: ' + Math.round(INVESTOR_DOWN_PAYMENT * 100) + '% down, 30yr fixed, expenses 45-55% of rent (tiered by price), ' + apprNote + '</span>';
         $('smartRentDetails').innerHTML = rentHtml;
         $('smartRentInfo').style.display = '';
       }
@@ -2903,7 +3586,7 @@
   // ======================================================================
   // Rent Estimation
   // ======================================================================
-  window.fetchRentEstimate = async function() {
+  window.fetchRentEstimate = async function(allowOverage) {
     var btn = $('estimateRentBtn');
     btn.textContent = '...';
     btn.disabled = true;
@@ -2942,10 +3625,22 @@
       var resp = await fetch('/api/rent-estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ location: location })
+        body: JSON.stringify(rentEstimateBody(location, allowOverage))
       });
       var data = await resp.json();
-      if (data.stats && data.stats.count > 0) {
+      if (data.usage) updateUsageDisplay(data.usage);
+      if (data.quota_gate) {
+        if (data.estimate) applyRentEstimate(data.estimate, data.comparables);
+        if (data.vacancy) applyVacancy(data.vacancy);
+        showQuotaGate(data.quota_gate, function(ok) { fetchRentEstimate(ok); });
+        btn.textContent = 'Estimate Rent';
+        btn.disabled = false;
+        return;
+      }
+      if (data.vacancy) applyVacancy(data.vacancy);
+      if (data.estimate) {
+        applyRentEstimate(data.estimate, data.comparables);
+      } else if (data.stats && data.stats.count > 0) {
         var s = data.stats;
         $('rentEstimateStats').innerHTML =
           '<div class="rent-stat"><div class="rent-label">Low (25th)</div><div class="rent-value">$' + fmtInt(s.low) + '</div></div>' +
@@ -2974,6 +3669,102 @@
     btn.textContent = 'Estimate Rent';
     btn.disabled = false;
   };
+
+  // ======================================================================
+  // Rent estimate helpers
+  // ======================================================================
+  function rentEstimateBody(location, allowOverage) {
+    return {
+      location: location,
+      address: (scrapedData && scrapedData.address) || $('propName').value.trim() || '',
+      beds: (scrapedData && scrapedData.beds) || null,
+      baths: (scrapedData && scrapedData.baths) || null,
+      sqft: val($('sqft'), 0) || (scrapedData && scrapedData.sqft) || null,
+      property_type: (scrapedData && scrapedData.propertyType) || null,
+      allow_overage: allowOverage || rentcastAllowOverage
+    };
+  }
+
+  // Vacancy is turnover time, so it follows local re-let speed rather than a
+  // flat national figure. Same guard as tax: a manual edit is never replaced.
+  function applyVacancy(vac) {
+    if (!vac || !vac.rate_pct) return;
+    if (!userEditedFields['vacancy']) {
+      $('vacancy').value = vac.rate_pct;
+      markSource('vacancy', vac.source === 'market' ? 'rentcast_market' : 'estimated');
+    }
+    var note = $('vacancyNote');
+    if (note) {
+      note.textContent = vac.source === 'market'
+        ? vac.rate_pct + '% — ' + vac.label + (vac.floored ? ' (floored)' : '')
+        : vac.rate_pct + '% — ' + vac.label;
+      note.style.display = '';
+    }
+    if (typeof calculate === 'function') calculate();
+  }
+
+  function applyRentEstimate(est, comps) {
+    if (!est || !est.rent) return;
+    if (!userEditedFields['monthlyRent']) {
+      $('monthlyRent').value = est.rent;
+      markSource('monthlyRent', est.source || 'rentcast_avm');
+    }
+    var html = '<div class="rent-stat"><div class="rent-label">Estimate</div>'
+             + '<div class="rent-value highlight">$' + fmtInt(est.rent) + '</div></div>';
+    // The range is the underwriting signal: does the deal still work at the
+    // low end? Show it rather than just the point estimate.
+    if (est.rent_low) {
+      html = '<div class="rent-stat"><div class="rent-label">Low</div><div class="rent-value">$'
+           + fmtInt(est.rent_low) + '</div></div>' + html;
+    }
+    if (est.rent_high) {
+      html += '<div class="rent-stat"><div class="rent-label">High</div><div class="rent-value">$'
+           + fmtInt(est.rent_high) + '</div></div>';
+    }
+    $('rentEstimateStats').innerHTML = html;
+    $('rentEstimateLocation').textContent = est.label || '';
+    var note = est.source === 'rentcast_avm'
+      ? 'Property-specific model estimate. Check that it still cash-flows at the low end.'
+      : 'Area estimate scaled by size'
+        + (est.sample_size ? ' from ' + est.sample_size + ' rentals' : '') + '.';
+    if (est.days_on_market) note += ' Typical rental sits ' + est.days_on_market + ' days.';
+    $('rentEstimateNote').textContent = note;
+    $('rentEstimateSection').style.display = '';
+    $('rentEstimateStats').querySelectorAll('.rent-stat').forEach(function(el) {
+      el.style.cursor = 'pointer';
+      el.onclick = function() {
+        $('monthlyRent').value = el.querySelector('.rent-value').textContent.replace(/[^0-9]/g, '');
+        calculate();
+      };
+    });
+    if (typeof calculate === 'function') calculate();
+  }
+
+  // Fires automatically on Analyze so rent is never a manual step.
+  async function autoEstimateRent(allowOverage) {
+    if (userEditedFields['monthlyRent']) return;
+    var address = (scrapedData && scrapedData.address) || $('propName').value.trim();
+    if (!address) return;
+    var zipM = address.match(/\d{5}/);
+    var location = zipM ? zipM[0] : address;
+    try {
+      var resp = await fetch('/api/rent-estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rentEstimateBody(location, allowOverage))
+      });
+      var data = await resp.json();
+      if (data.usage) updateUsageDisplay(data.usage);
+      if (data.quota_gate) {
+        if (data.estimate) applyRentEstimate(data.estimate, data.comparables);
+        if (data.vacancy) applyVacancy(data.vacancy);
+        showQuotaGate(data.quota_gate, function(ok) { autoEstimateRent(ok); });
+        return;
+      }
+      if (data.vacancy) applyVacancy(data.vacancy);
+      if (data.estimate) applyRentEstimate(data.estimate, data.comparables);
+    } catch (err) { /* silent: the field keeps whatever it had */ }
+  }
 
   // ======================================================================
   // Sensitivity Analysis (computed in renderResults)
@@ -3072,6 +3863,33 @@
     });
     html += '</tbody></table></div>';
 
+    // 5. Appreciation vs return at the selected exit
+    //
+    // The four tables above all answer questions about cash flow. This is the
+    // only one that moves total return, and appreciation is both the largest
+    // and the least certain input — so it belongs beside them rather than
+    // being reachable only through the scenario picker.
+    if (r.apprBand && r.exitAt) {
+      html += '<div><table class="sensitivity-table"><thead><tr><th colspan="3">Appreciation &rarr; ' + (r.holdYears || 5) + '-Year Pre-Tax Return</th></tr><tr><th>Rate</th><th>After Selling Costs</th><th>Pre-Tax Profit</th></tr></thead><tbody>';
+      var rows = r.apprBand.scenarios.map(function(sc) {
+        return { label: sc.label, pct: sc.pct, current: sc.active };
+      });
+      // A hand-typed rate is not one of the scenarios, so give it its own row
+      // rather than leaving the table with nothing highlighted.
+      if (r.apprBand.custom) {
+        rows.push({ label: 'Your rate', pct: r.valueGrowthPct, current: true });
+        rows.sort(function(a, b) { return a.pct - b.pct; });
+      }
+      rows.forEach(function(row) {
+        var out = r.exitAt(row.pct);
+        var cur = row.current ? ' current' : '';
+        html += '<tr><td class="' + cur.trim() + '">' + fmt(row.pct) + '% ' + row.label + '</td>'
+          + '<td class="' + (out.appreciationAfterSellingCosts >= 0 ? 'positive' : 'negative') + cur + '">' + fmtDollar(out.appreciationAfterSellingCosts) + '</td>'
+          + '<td class="' + (out.preTaxProfit >= 0 ? 'positive' : 'negative') + cur + '">' + fmtDollar(out.preTaxProfit) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
     grid.innerHTML = html;
   }
 
@@ -3092,35 +3910,89 @@
 
   // ======================================================================
   // Calculation Engine
+  //
+  // Split in two on purpose. readInputs() is the only thing that touches the
+  // form; computeDeal() is pure arithmetic over a plain object. That lets the
+  // what-if page recompute against overridden values without writing anything
+  // into the form the user is still editing — and guarantees both views run
+  // the identical model, so they cannot drift apart.
   // ======================================================================
-  function calculate() {
-    var price = val($('purchasePrice'), 0);
-    var arvVal = val($('arv'), 0);
-    var closingCostsVal = val($('closingCosts'), 0);
-    var rehabVal = val($('rehabBudget'), 0);
-    var valueGrowthPct = val($('valueGrowth'), 0, 50);
-
+  function readInputs() {
     var isCash = $('cashPurchase').checked;
-    var dpPct = isCash ? 100 : val($('downPayment'), 0, 100);
-    var rate = isCash ? 0 : val($('interestRate'), 0, 30);
-    var termYears = isCash ? 0 : Math.max(1, Math.round(val($('loanTerm'), 1, 50)));
-    var pointsVal = isCash ? 0 : val($('points'), 0, 10);
+    return {
+      price: val($('purchasePrice'), 0),
+      arv: val($('arv'), 0),
+      closingCosts: val($('closingCosts'), 0),
+      rehab: val($('rehabBudget'), 0),
+      valueGrowthPct: val($('valueGrowth'), -25, 50),
+      isCash: isCash,
+      dpPct: isCash ? 100 : val($('downPayment'), 0, 100),
+      rate: isCash ? 0 : val($('interestRate'), 0, 30),
+      termYears: isCash ? 0 : Math.max(1, Math.round(val($('loanTerm'), 1, 50))),
+      points: isCash ? 0 : val($('points'), 0, 10),
+      totalRent: getTotalRent(),
+      otherIncome: val($('otherIncome'), 0),
+      incomeGrowthPct: val($('incomeGrowth'), 0, 50),
+      taxesYr: val($('propertyTaxes'), 0),
+      insuranceYr: val($('insurance'), 0),
+      maintPct: val($('maintenance'), 0, 100),
+      vacPct: val($('vacancy'), 0, 100),
+      capexPct: val($('capex'), 0, 100),
+      mgmtPct: val($('management'), 0, 100),
+      hoaMonth: val($('hoa'), 0),
+      utilMonth: val($('utilities'), 0),
+      otherExpMonth: val($('otherExpenses'), 0),
+      expGrowthPct: val($('expenseGrowth'), 0, 50),
+      sqft: val($('sqft'), 0),
+      buildingPct: val($('buildingPct'), 0, 100),
+      sellingCostPct: val($('sellingCostPct'), 0, 20),
+      holdYears: Math.max(1, Math.min(PROJECTION_YEARS, parseInt($('holdYears').value) || 10)),
+      propertyType: propertyType,
+      unitCount: propertyType === 'sfh' ? 1 : Math.max(1, parseInt($('unitCount').value) || 1),
+      // Passed in rather than read from the module global, so a computed deal
+      // is fully determined by its inputs.
+      appreciationProfile: appreciationProfile
+    };
+  }
 
-    var totalRent = getTotalRent();
-    var otherInc = val($('otherIncome'), 0);
+  function calculate() {
+    var inputs = readInputs();
+    lastCalcResults = computeDeal(inputs);
+    lastTaxContext = computeTaxContext(inputs);
+    // Only update DOM if on step 6 — unchanged from before the split.
+    if (currentStep === 6) renderResults();
+  }
+
+  function computeDeal(inp) {
+    var price = inp.price;
+    var arvVal = inp.arv;
+    var closingCostsVal = inp.closingCosts;
+    var rehabVal = inp.rehab;
+    var valueGrowthPct = inp.valueGrowthPct;
+
+    var isCash = inp.isCash;
+    var dpPct = inp.dpPct;
+    var rate = inp.rate;
+    var termYears = inp.termYears;
+    var pointsVal = inp.points;
+
+    var totalRent = inp.totalRent;
+    var otherInc = inp.otherIncome;
     var totalMonthlyIncome = totalRent + otherInc;
-    var incomeGrowthPct = val($('incomeGrowth'), 0, 50);
+    var incomeGrowthPct = inp.incomeGrowthPct;
 
-    var taxesYr = val($('propertyTaxes'), 0);
-    var insuranceYr = val($('insurance'), 0);
-    var maintPct = val($('maintenance'), 0, 100);
-    var vacPct = val($('vacancy'), 0, 100);
-    var capexPct = val($('capex'), 0, 100);
-    var mgmtPct = val($('management'), 0, 100);
-    var hoaMonth = val($('hoa'), 0);
-    var utilMonth = val($('utilities'), 0);
-    var otherExpMonth = val($('otherExpenses'), 0);
-    var expGrowthPct = val($('expenseGrowth'), 0, 50);
+    var taxesYr = inp.taxesYr;
+    var insuranceYr = inp.insuranceYr;
+    var maintPct = inp.maintPct;
+    var vacPct = inp.vacPct;
+    var capexPct = inp.capexPct;
+    var mgmtPct = inp.mgmtPct;
+    var hoaMonth = inp.hoaMonth;
+    var utilMonth = inp.utilMonth;
+    var otherExpMonth = inp.otherExpMonth;
+    var expGrowthPct = inp.expGrowthPct;
+    var propertyType = inp.propertyType;
+    var appreciationProfile = inp.appreciationProfile;
 
     // Loan
     var dpAmount = isCash ? price : price * dpPct / 100;
@@ -3178,11 +4050,9 @@
 
     var totalCashClose = totalCashInvested;
 
-    // New metrics: per-unit, per-sqft, OER, depreciation, tax savings
-    var sqft = val($('sqft'), 0);
-    var taxRatePct = val($('taxRate'), 0, 50);
-    var buildingPct = val($('buildingPct'), 0, 100);
-    var unitCount = propertyType === 'sfh' ? 1 : Math.max(1, parseInt($('unitCount').value) || 1);
+    // New metrics: per-unit, per-sqft and OER
+    var sqft = inp.sqft;
+    var unitCount = inp.unitCount;
 
     var pricePerSqft = sqft > 0 ? price / sqft : null;
     var pricePerUnit = price / unitCount;
@@ -3190,9 +4060,6 @@
     var monthlyCFPerUnit = monthlyCF / unitCount;
     var opexForOER = monthlyTaxes + monthlyInsurance + maintExp + mgmtExp + hoaMonth + utilMonth + otherExpMonth;
     var oer = totalMonthlyIncome > 0 ? (opexForOER / totalMonthlyIncome) * 100 : 0;
-    var annualDepreciation = (price * buildingPct / 100) / 27.5;
-    var annualTaxSavings = annualDepreciation * taxRatePct / 100;
-    var afterTaxCF = annualCF + annualTaxSavings;
 
     // 1% Rule
     var onePercentPass = totalMonthlyIncome >= price * 0.01;
@@ -3207,15 +4074,16 @@
     var seventyPctPass = arvVal > 0 ? (price + rehabVal) <= arvVal * 0.70 : false;
     var show70 = rehabVal > 0 || arvVal > 0;
 
-    // ---- 5yr Annualized ROI ----
+    // ---- Year-by-year projection ----
+    // Runs to PROJECTION_YEARS so every selectable holding period and the
+    // what-if horizon table use the same projection path.
     // Build amortization schedule for loan balance lookups
     var amortSchedule = buildAmortSchedule(loanAmount, monthlyRate, n, termYears, monthlyPI);
     var initialEquity = price - loanAmount; // = dpAmount effectively
 
     var cumulativeCF = 0;
-    var cumulativeTaxSavings = 0;
     var projRows = [];
-    for (var yr = 1; yr <= 5; yr++) {
+    for (var yr = 1; yr <= PROJECTION_YEARS; yr++) {
       var rentMult = Math.pow(1 + incomeGrowthPct / 100, yr);
       var expMult = Math.pow(1 + expGrowthPct / 100, yr);
       var valMult = Math.pow(1 + valueGrowthPct / 100, yr);
@@ -3228,32 +4096,176 @@
       var moFixedOpex = (monthlyTaxes + monthlyInsurance + hoaMonth + utilMonth + otherExpMonth) * expMult;
       var moTotalOpex = moFixedOpex + moMaint + moVac + moCapex + moMgmt;
       var yrCF = (moIncome - moTotalOpex - monthlyPI) * 12;
-      var yrTaxSavings = annualDepreciation * taxRatePct / 100;
-
       cumulativeCF += yrCF;
-      cumulativeTaxSavings += yrTaxSavings;
       var propVal = price * valMult;
       var loanBal = (yr <= amortSchedule.length) ? amortSchedule[yr - 1].balance : 0;
       var equity = propVal - loanBal;
-      var cumROI = totalCashInvested > 0 ? ((cumulativeCF + cumulativeTaxSavings + (equity - initialEquity)) / totalCashInvested) * 100 : 0;
+      // Unrealized return before selling costs. Upfront costs are still real
+      // cash outflows and must be subtracted from profit.
+      var unrealizedProfit = cumulativeCF + (equity - initialEquity)
+        - closingCostsVal - rehabVal - pointsCost;
+      var cumROI = totalCashInvested > 0 ? (unrealizedProfit / totalCashInvested) * 100 : 0;
 
-      projRows.push({ year: yr, cf: yrCF, propVal: propVal, loanBal: loanBal, equity: equity, cumROI: cumROI });
+      // The annual P&L lines the what-if table reports. Purely additive --
+      // every existing reader picks fields off the row by name.
+      projRows.push({ year: yr, cf: yrCF, cumCF: cumulativeCF, propVal: propVal,
+                      loanBal: loanBal, equity: equity, cumROI: cumROI,
+                      income: moIncome * 12, opex: moTotalOpex * 12,
+                      noi: (moIncome - moTotalOpex) * 12,
+                      coc: totalCashInvested > 0 ? (yrCF / totalCashInvested) * 100 : 0 });
     }
 
-    var annualized5yrROI = 0;
-    if (projRows.length > 0 && totalCashInvested > 0) {
-      var totalMultiple = 1 + (projRows[4].cumROI / 100);
-      if (totalMultiple > 0) {
-        annualized5yrROI = (Math.pow(totalMultiple, 0.2) - 1) * 100;
+    var holdYearsPre = Math.max(1, Math.min(PROJECTION_YEARS, inp.holdYears || 5));
+    var holdIdxPre = Math.min(holdYearsPre, projRows.length) - 1;
+    // Return components over the selected hold. The exit calculation below
+    // turns these into a fully reconciled pre-income-tax profit.
+    var totalReturnCF = projRows.length > 0 ? projRows[holdIdxPre].cumCF : cumulativeCF;
+    var saleValue = projRows.length > 0 ? projRows[holdIdxPre].propVal : price;
+    var exitLoanBal = projRows.length > 0 ? projRows[holdIdxPre].loanBal : loanAmount;
+    var totalReturnAppreciation = saleValue - price;
+    var totalReturnDebtPaydown = projRows.length > 0 ? loanAmount - exitLoanBal : 0;
+
+    // ---- Cost of getting out ----
+    // The gross figure above is what the property is worth, not what you keep.
+    // Selling costs at exit can consume a large share of a short-hold gain,
+    // which is enough to flip a deal, so they are computed rather than implied.
+    //
+    // Written as a function of the growth rate because the same arithmetic has
+    // to answer "what if appreciation were X" for the comparison figure and for
+    // every row of the sensitivity table. Only the sale side varies: cash flow
+    // and the loan balance do not depend on the rate, so they are
+    // computed once above and closed over here.
+    var sellingCostPct = inp.sellingCostPct;
+    // An annualized figure computed from total profit ignores *when* the
+    // cash arrived; IRR does not, and it is the number these reports are
+    // usually read against -- so both are offered rather than one passed off
+    // as the other. Bisection rather than Newton: the NPV polynomial has flat
+    // stretches where a derivative step overshoots, and halving a bounded
+    // bracket 80 times is exact well past the precision anything here displays.
+    function irrOf(flows) {
+      var npv = function(r) {
+        var t = 0;
+        for (var i = 0; i < flows.length; i++) t += flows[i] / Math.pow(1 + r, i);
+        return t;
+      };
+      var lo = -0.9999, hi = 10;
+      var nlo = npv(lo), nhi = npv(hi);
+      // No sign change means no root in the bracket. A deal that never turns
+      // positive has no IRR worth quoting, so report nothing rather than a
+      // number that looks like an answer.
+      if (!isFinite(nlo) || !isFinite(nhi) || (nlo > 0) === (nhi > 0)) return null;
+      for (var k = 0; k < 80; k++) {
+        var mid = (lo + hi) / 2, nm = npv(mid);
+        if ((nm > 0) === (nlo > 0)) { lo = mid; nlo = nm; } else { hi = mid; }
       }
+      return ((lo + hi) / 2) * 100;
     }
 
-    // Total Return Breakdown (5-year)
-    var totalReturnCF = cumulativeCF;
-    var totalReturnAppreciation = projRows.length > 0 ? projRows[4].propVal - price : 0;
-    var totalReturnDebtPaydown = projRows.length > 0 ? loanAmount - projRows[4].loanBal : 0;
-    var totalReturnTaxBenefits = cumulativeTaxSavings;
-    var totalReturn5yr = totalReturnCF + totalReturnAppreciation + totalReturnDebtPaydown + totalReturnTaxBenefits;
+    function exitAt(ratePct, years) {
+      years = years || holdYearsPre;
+      var row = projRows[Math.min(years, projRows.length) - 1];
+      var value = price * Math.pow(1 + ratePct / 100, years);
+      var costs = value * sellingCostPct / 100;
+      var netSale = value - costs;
+      var appreciationAfterSellingCosts = (value - price) - costs;
+      var loanBal = row ? row.loanBal : loanAmount;
+      var cumCF = row ? row.cumCF : 0;
+      var paydown = loanAmount - loanBal;
+      var upfrontCosts = closingCostsVal + rehabVal + pointsCost;
+      var preTaxProfit = cumCF + appreciationAfterSellingCosts + paydown - upfrontCosts;
+      var annualized = 0;
+      if (totalCashInvested > 0) {
+        var multiple = 1 + (preTaxProfit / totalCashInvested);
+        if (multiple > 0) annualized = (Math.pow(multiple, 1 / years) - 1) * 100;
+      }
+      // Year 0 is the cash going in; each held year returns its own cash flow,
+      // and the last year also returns what the sale nets after paying off the
+      // loan. Income taxes are outside this underwriting cash-flow vector.
+      var irrPct = null;
+      if (totalCashInvested > 0) {
+        var flows = [-totalCashInvested];
+        for (var fy = 1; fy <= years; fy++) {
+          var frow = projRows[Math.min(fy, projRows.length) - 1];
+          flows.push(frow ? frow.cf : 0);
+        }
+        flows[flows.length - 1] += (netSale - loanBal);
+        irrPct = irrOf(flows);
+      }
+      return {
+        ratePct: ratePct, years: years, saleValue: value, sellingCosts: costs,
+        grossAppreciation: value - price, exitLoanBal: loanBal,
+        cumulativeCF: cumCF, debtPaydown: paydown, upfrontCosts: upfrontCosts,
+        preTaxNetSaleProceeds: netSale - loanBal,
+        appreciationAfterSellingCosts: appreciationAfterSellingCosts,
+        preTaxProfit: preTaxProfit, preTaxAnnualizedROI: annualized,
+        irr: irrPct
+      };
+    }
+
+    var exitBase = exitAt(valueGrowthPct, holdYearsPre);
+    // The same deal at what this ZIP historically did, shown beside the base
+    // case so the conservative default never hides the upside.
+    var exitHistorical = null;
+    if (appreciationProfile && appreciationProfile.rate_pct !== undefined
+        && Math.abs(appreciationProfile.rate_pct - valueGrowthPct) >= 0.05) {
+      exitHistorical = exitAt(appreciationProfile.rate_pct, holdYearsPre);
+    }
+
+    var sellingCosts = exitBase.sellingCosts;
+    var preTaxNetSaleProceeds = exitBase.preTaxNetSaleProceeds;
+    var appreciationAfterSellingCosts = exitBase.appreciationAfterSellingCosts;
+    var preTaxProfit = exitBase.preTaxProfit;
+    var preTaxAnnualizedROI = exitBase.preTaxAnnualizedROI;
+
+    // ---- What the rate could have been ----
+    // A single compounding curve implies a confidence the data does not
+    // support. The band is the spread of every overlapping five-year window in
+    // this ZIP's history, so it reflects how volatile this market actually is
+    // rather than a generic error bar.
+    var apprBand = null;
+    if (appreciationProfile && appreciationProfile.worst_pct !== null
+        && appreciationProfile.worst_pct !== undefined) {
+      var p = appreciationProfile;
+      var atRate = function(pct) { return price * Math.pow(1 + pct / 100, holdYearsPre); };
+      // Ordered worst to best so it reads as a risk ladder.
+      var scenarios = [
+        { key: 'downturn', label: 'Downturn', pct: p.low_pct,
+          note: 'weakest 10% of past ' + (p.band_years || 5) + 'yr windows' },
+        { key: 'conservative', label: 'Conservative', pct: p.conservative_pct,
+          note: 'near inflation \u2014 the default' },
+        { key: 'historical', label: 'Historical', pct: p.rate_pct,
+          note: 'what this area averaged' },
+        { key: 'strong', label: 'Strong', pct: p.high_pct,
+          note: 'strongest 10% of past ' + (p.band_years || 5) + 'yr windows' }
+      ];
+      scenarios.forEach(function(sc) {
+        sc.value = atRate(sc.pct);
+        // Float comparison: the field rounds to the same 2dp the API sends.
+        sc.active = Math.abs(sc.pct - valueGrowthPct) < 0.005;
+      });
+      apprBand = {
+        rate: valueGrowthPct,
+        scenarios: scenarios,
+        custom: !scenarios.some(function(sc) { return sc.active; }),
+        worstPct: p.worst_pct,
+        worst: price * (1 + p.worst_pct / 100),
+        bandYears: p.band_years,
+        label: p.label, window: p.window, source: p.source
+      };
+    }
+
+    // ---- Price-to-rent drift ----
+    // Value growing faster than rent means the price-to-rent ratio expands
+    // every year. Over a long hold that is a large unstated bet on cap rate
+    // compression, so it gets said out loud rather than compounding quietly.
+    var growthGap = valueGrowthPct - incomeGrowthPct;
+    var growthWarning = null;
+    if (growthGap > 0.5) {
+      var ratioDrift = (Math.pow((1 + valueGrowthPct / 100) / (1 + incomeGrowthPct / 100), 30) - 1) * 100;
+      growthWarning = 'Value growth exceeds rent growth by ' + growthGap.toFixed(1) +
+        ' points. Held 30 years that implies the price-to-rent ratio rises ' +
+        Math.round(ratioDrift) + '% \u2014 an implicit bet that cap rates keep compressing.';
+    }
 
     // Deal Score — point-based scorecard
     var dealFactors = [];
@@ -3320,7 +4332,7 @@
     }
 
     // Store results
-    lastCalcResults = {
+    return {
       price: price, arv: arvVal, closingCosts: closingCostsVal, rehab: rehabVal,
       valueGrowthPct: valueGrowthPct, isCash: isCash, dpPct: dpPct, dpAmount: dpAmount,
       rate: rate, termYears: termYears, points: pointsVal, pointsCost: pointsCost,
@@ -3334,22 +4346,41 @@
       coc: coc, capRate: capRate, grm: grm, breakeven: breakeven, dscr: dscr,
       totalCashClose: totalCashClose, onePercentPass: onePercentPass, onePercentPct: onePercentPct,
       fiftyPctRatio: fiftyPctRatio, show70: show70, seventyPctVal: seventyPctVal,
-      seventyPctPass: seventyPctPass, annualized5yrROI: annualized5yrROI,
+      seventyPctPass: seventyPctPass, preTaxAnnualizedROI: preTaxAnnualizedROI,
       dealGrade: dealGrade, dealText: dealText, dealExpl: dealExpl,
       dealFactors: dealFactors, dealPoints: dealPoints, dealMaxPoints: dealMaxPoints,
       sqft: sqft, pricePerSqft: pricePerSqft, pricePerUnit: pricePerUnit,
       rentPerSqft: rentPerSqft, monthlyCFPerUnit: monthlyCFPerUnit, oer: oer,
-      unitCount: unitCount, annualDepreciation: annualDepreciation,
-      annualTaxSavings: annualTaxSavings, afterTaxCF: afterTaxCF,
+      unitCount: unitCount,
       totalReturnCF: totalReturnCF, totalReturnAppreciation: totalReturnAppreciation,
-      totalReturnDebtPaydown: totalReturnDebtPaydown, totalReturnTaxBenefits: totalReturnTaxBenefits,
-      totalReturn5yr: totalReturn5yr,
+      saleValue: saleValue, sellingCostPct: sellingCostPct, sellingCosts: sellingCosts,
+      preTaxNetSaleProceeds: preTaxNetSaleProceeds,
+      appreciationAfterSellingCosts: appreciationAfterSellingCosts,
+      exitHistorical: exitHistorical, exitAt: exitAt,
+      preTaxProfit: preTaxProfit, preTaxAnnualizedROI: preTaxAnnualizedROI,
+      preTaxIRR: exitBase.irr,
+      exitLoanBal: exitLoanBal, apprBand: apprBand, growthWarning: growthWarning,
+      holdYears: holdYearsPre,
+      totalReturnDebtPaydown: totalReturnDebtPaydown,
       projRows: projRows, amortSchedule: amortSchedule, monthlyRate: monthlyRate,
       propertyType: propertyType, n: n
     };
+  }
 
-    // Only update DOM if on step 6
-    if (currentStep === 6) renderResults();
+  // ======================================================================
+  // Optional Tax Context
+  //
+  // Deliberately separate from computeDeal(). This is only a rough display
+  // aid; it never enters underwriting cash flow, profit, ROI or IRR.
+  // ======================================================================
+  function computeTaxContext(inp) {
+    var buildingPct = inp.buildingPct;
+    var roughBuildingBasis = inp.price * buildingPct / 100;
+    return {
+      buildingPct: buildingPct,
+      roughBuildingBasis: roughBuildingBasis,
+      roughAnnualDepreciation: roughBuildingBasis / 27.5
+    };
   }
 
   // ======================================================================
@@ -3437,7 +4468,7 @@
     }
     setMetricColor('resCoC', fmtPct(r.coc), r.coc);
     setMetricText('resCapRate', fmtPct(r.capRate));
-    setMetricText('res5yrROI', fmtPct(r.annualized5yrROI));
+    setMetricText('res5yrROI', fmtPct(r.preTaxAnnualizedROI));
 
     // B) Quick Rules
     $('rule1Badge').textContent = r.onePercentPass ? 'PASS' : 'FAIL';
@@ -3471,7 +4502,7 @@
     // New detailed metrics
     setMetricText('resOER', fmtPct(r.oer));
     setMetricColor('resCFPerUnit', fmtDollar(r.monthlyCFPerUnit), r.monthlyCFPerUnit);
-    setMetricText('resDepreciation', fmtDollar(r.annualDepreciation));
+    setMetricText('resDepreciation', fmtDollar(lastTaxContext.roughAnnualDepreciation || 0));
     if (r.pricePerSqft !== null) {
       $('resPricePerSqftCard').style.display = '';
       setMetricText('resPricePerSqft', fmtDollar(r.pricePerSqft));
@@ -3495,23 +4526,43 @@
     // D2) Investment Summary
     // Return pillars
     var pillarsHtml = '';
+    var histRate = r.exitHistorical ? fmt(r.exitHistorical.ratePct) + '%' : null;
     var pillars = [
       { label: 'Cash Flow', val: r.totalReturnCF },
-      { label: 'Appreciation', val: r.totalReturnAppreciation },
+      { label: 'Appreciation after selling costs', val: r.appreciationAfterSellingCosts,
+        alt: r.exitHistorical ? r.exitHistorical.appreciationAfterSellingCosts : null },
       { label: 'Debt Paydown', val: r.totalReturnDebtPaydown },
-      { label: 'Tax Benefits', val: r.totalReturnTaxBenefits }
+      { label: 'Closing, rehab & points', val: -(r.closingCosts + r.rehab + r.pointsCost) }
     ];
-    var allPositive = r.totalReturn5yr > 0 && pillars.every(function(p) { return p.val >= 0; });
     pillars.forEach(function(p) {
       var valClass = p.val >= 0 ? 'positive' : 'negative';
-      var pctText = '';
-      if (allPositive) {
-        pctText = fmt(p.val / r.totalReturn5yr * 100) + '% of total';
-      }
-      pillarsHtml += '<div class="pillar-card"><div class="pillar-label">' + p.label + '</div><div class="pillar-value ' + valClass + '">' + fmtDollar(p.val) + '</div>' + (pctText ? '<div class="pillar-pct">' + pctText + '</div>' : '') + '</div>';
+      // The base case is conservative by design, so the historical figure sits
+      // beside it rather than a click away — the upside is not a reward for
+      // going looking.
+      var altText = (p.alt !== null && p.alt !== undefined && histRate)
+        ? '<div class="pillar-alt">' + fmtDollar(p.alt) + ' at ' + histRate + '</div>' : '';
+      pillarsHtml += '<div class="pillar-card"><div class="pillar-label">' + p.label + '</div><div class="pillar-value ' + valClass + '">' + fmtDollar(p.val) + '</div>' + altText + '</div>';
     });
-    pillarsHtml += '<div class="pillar-card pillar-total" style="grid-column: 1 / -1;"><div class="pillar-label">5-Year Total Return</div><div class="pillar-value">' + fmtDollar(r.totalReturn5yr) + '</div><div class="pillar-pct">' + fmtPct(r.totalCashInvested > 0 ? r.totalReturn5yr / r.totalCashInvested * 100 : 0) + ' on ' + fmtDollar(r.totalCashInvested) + ' invested</div></div>';
+    pillarsHtml += '<div class="pillar-card pillar-total" style="grid-column: 1 / -1;"><div class="pillar-label">' + (r.holdYears || 5) + '-Year Pre-Tax Profit (after selling costs)</div><div class="pillar-value">' + fmtDollar(r.preTaxProfit) + '</div><div class="pillar-pct">' + fmtPct(r.totalCashInvested > 0 ? r.preTaxProfit / r.totalCashInvested * 100 : 0) + ' on ' + fmtDollar(r.totalCashInvested) + ' invested &middot; ' + fmtPct(r.preTaxAnnualizedROI) + '/yr' + (r.preTaxIRR !== null ? ' &middot; ' + fmtPct(r.preTaxIRR) + ' IRR' : '') + '</div>' +
+      (r.exitHistorical
+        ? '<div class="pillar-alt">' + fmtDollar(r.exitHistorical.preTaxProfit) +
+          ' if ' + (appreciationProfile && appreciationProfile.zip ? appreciationProfile.zip : 'this area') +
+          ' repeats its ' + histRate + ' history</div>'
+        : '') + '</div>';
     $('returnPillars').innerHTML = pillarsHtml;
+
+    // Every label that used to say "5-Year" now follows the chosen hold.
+    var hy = r.holdYears || 5;
+    var setTxt = function(id, t) { var e = $(id); if (e) e.textContent = t; };
+    setTxt('roiLabel', hy + 'yr');
+    setTxt('summaryHoldLabel', hy + '-Year');
+    setTxt('projHoldLabel', hy + '-Year');
+
+    renderExitCosts(r);
+    renderApprBand(r);
+    var gw = $('growthWarning');
+    if (r.growthWarning) { gw.textContent = r.growthWarning; gw.style.display = ''; }
+    else { gw.style.display = 'none'; }
 
     // Factor scorecard
     var factorHtml = '';
@@ -3530,10 +4581,10 @@
     stratHtml += '<div class="strategy-card"><div class="strat-title">Cash Flow</div><div class="strat-fit ' + (cfGood ? 'good' : (cfOk ? 'good' : 'poor')) + '">' + (cfGood ? 'Strong Fit' : (cfOk ? 'Moderate Fit' : 'Poor Fit')) + '</div><div class="strat-detail">CoC ' + fmtPct(r.coc) + ', ' + fmtDollar(r.monthlyCFPerUnit) + '/unit' + (r.dscr !== null ? ', DSCR ' + fmt(r.dscr) : '') + '</div></div>';
 
     // Wealth Building strategy
-    var totalReturnPct = r.totalCashInvested > 0 ? r.totalReturn5yr / r.totalCashInvested * 100 : 0;
+    var totalReturnPct = r.totalCashInvested > 0 ? r.preTaxProfit / r.totalCashInvested * 100 : 0;
     var wbGood = totalReturnPct >= 50;
     var wbOk = totalReturnPct >= 25;
-    stratHtml += '<div class="strategy-card"><div class="strat-title">Wealth Building</div><div class="strat-fit ' + (wbGood ? 'good' : (wbOk ? 'good' : 'poor')) + '">' + (wbGood ? 'Strong Fit' : (wbOk ? 'Moderate Fit' : 'Poor Fit')) + '</div><div class="strat-detail">5yr return ' + fmtPct(totalReturnPct) + ', appreciation ' + fmtDollar(r.totalReturnAppreciation) + '</div></div>';
+    stratHtml += '<div class="strategy-card"><div class="strat-title">Wealth Building</div><div class="strat-fit ' + (wbGood ? 'good' : (wbOk ? 'good' : 'poor')) + '">' + (wbGood ? 'Strong Fit' : (wbOk ? 'Moderate Fit' : 'Poor Fit')) + '</div><div class="strat-detail">' + (r.holdYears || 5) + 'yr return ' + fmtPct(totalReturnPct) + ', appreciation ' + fmtDollar(r.totalReturnAppreciation) + '</div></div>';
 
     // Low Risk strategy
     var lrGood = r.breakeven <= 75 && (r.dscr === null || r.dscr >= 1.5) && r.fiftyPctRatio <= 50;
@@ -3541,10 +4592,11 @@
     stratHtml += '<div class="strategy-card"><div class="strat-title">Low Risk</div><div class="strat-fit ' + (lrGood ? 'good' : (lrOk ? 'good' : 'poor')) + '">' + (lrGood ? 'Strong Fit' : (lrOk ? 'Moderate Fit' : 'Poor Fit')) + '</div><div class="strat-detail">Break-even ' + fmtPct(r.breakeven) + (r.dscr !== null ? ', DSCR ' + fmt(r.dscr) : '') + ', OER ' + fmtPct(r.oer) + '</div></div>';
     $('strategyNotes').innerHTML = stratHtml;
 
-    // E) 5-Year Projection
+    // E) Projection — projRows always runs 30 years for the what-if page, so
+    // trim it to the holding period actually being analysed.
     var projBody = $('projBody');
     projBody.innerHTML = '';
-    r.projRows.forEach(function(row) {
+    r.projRows.slice(0, r.holdYears || 5).forEach(function(row) {
       var tr = document.createElement('tr');
       var cfClass = row.cf >= 0 ? 'positive' : 'negative';
       tr.innerHTML = '<td>' + row.year + '</td><td class="' + cfClass + '">' + fmtDollar(row.cf) + '</td><td>' + fmtDollar(row.propVal) + '</td><td>' + fmtDollar(row.loanBal) + '</td><td>' + fmtDollar(row.equity) + '</td><td>' + fmtPct(row.cumROI) + '</td>';
@@ -3590,6 +4642,9 @@
 
     // H) Sensitivity Analysis
     renderSensitivity(r);
+
+    // Pillars and scorecard rows are built here, so annotate the new labels.
+    attachTooltips($('step6'));
   }
 
   function setMetricColor(id, text, value) {
@@ -3615,11 +4670,476 @@
   }
 
   // ======================================================================
+  // What selling actually costs
+  //
+  // Sale price is not cash in hand. Selling costs and the loan payoff are
+  // shown as readable subtractions rather than folded into one number.
+  // ======================================================================
+  function renderExitCosts(r) {
+    var el = $('exitBlock');
+    if (!el) return;
+    var row = function(label, amount, cls) {
+      // Negating a zero cost yields -0, which formats as "$-0.00".
+      if (amount === 0) amount = 0;
+      return '<div class="exit-row"><span class="exit-label">' + label + '</span>' +
+        '<span class="' + (amount < 0 ? (cls || '') : '') + '">' + fmtDollar(amount) + '</span></div>';
+    };
+    var html = '<h4>If you sold at year ' + (r.holdYears || 5) + '</h4>';
+    html += row('Sale price at ' + fmt(r.valueGrowthPct) + '%/yr', r.saleValue);
+    html += row('Selling costs (' + fmt(r.sellingCostPct) + '%)', -r.sellingCosts, 'neg');
+    html += row('Loan payoff', -r.exitLoanBal, 'neg');
+    html += '<div class="exit-row exit-sum"><span class="exit-label">Pre-tax net sale proceeds</span><span class="' +
+      (r.preTaxNetSaleProceeds >= 0 ? 'pos' : 'neg') + '">' + fmtDollar(r.preTaxNetSaleProceeds) + '</span></div>';
+    html += '<div class="exit-note">Appreciation before these costs was ' + fmtDollar(r.totalReturnAppreciation) +
+      '; after selling costs it is ' + fmtDollar(r.appreciationAfterSellingCosts) +
+      '. Income taxes are intentionally excluded; this is a pre-tax underwriting result.</div>';
+    el.innerHTML = html;
+    el.style.display = '';
+  }
+
+  // ======================================================================
+  // The range the rate could plausibly have taken
+  //
+  // A single compounding curve says nothing about how volatile a market is,
+  // and volatility is most of the risk on a five-year hold. These are real
+  // outcomes from this ZIP's own history, not a symmetric error bar.
+  // ======================================================================
+  function renderApprBand(r) {
+    var el = $('apprBand');
+    if (!el) return;
+    var b = r.apprBand;
+    if (!b) { el.style.display = 'none'; return; }
+    var tone = { downturn: 'band-low', conservative: '', historical: '', strong: 'band-high' };
+    var hy = r.holdYears || 5;
+    var html = '<h4>What if appreciation is\u2026 <span class="band-hint">value at year ' + hy +
+      '; pick one to rerun every number below</span></h4>';
+    html += '<div class="band-scale">';
+    b.scenarios.forEach(function(sc) {
+      html += '<button type="button" class="band-cell ' + (tone[sc.key] || '') +
+        (sc.active ? ' band-active' : '') +
+        '" onclick="setApprScenario(\'' + sc.key + '\',' + sc.pct + ')">' +
+        '<div class="band-label">' + sc.label + '</div>' +
+        '<div class="band-value">$' + fmtInt(sc.value) + '</div>' +
+        '<div class="band-label">' + fmt(sc.pct) + '%/yr</div>' +
+        '<div class="band-note">' + sc.note + '</div></button>';
+    });
+    html += '</div>';
+    if (b.custom) {
+      html += '<div class="band-custom">Running on a rate you entered (' + fmt(b.rate) +
+        '%/yr). Pick a scenario above to switch back.</div>';
+    }
+    if (b.worstPct !== null && b.worstPct < 0) {
+      html += '<div class="band-worst">In this area\u2019s worst ' + (b.bandYears || 5) +
+        '-year stretch on record, a $' + fmtInt(r.price) + ' property fell to <strong>$' +
+        fmtInt(b.worst) + '</strong> \u2014 a ' + Math.round(Math.abs(b.worstPct)) + '% loss.</div>';
+    }
+    html += '<div class="exit-note">Downturn and Strong are the 10th and 90th percentile of every ' +
+      'overlapping ' + (b.bandYears || 5) + '-year window in ' + b.label +
+      ' (FHFA repeat-sales index, ' + b.window + ')' +
+      ((b.bandYears || 5) < hy ? ' \u2014 the longest window with enough history for a ' + hy + '-year hold' : '') + '. ' +
+      'The default sits near long-run inflation rather than at the historical average, so a deal has ' +
+      'to work on cash flow and any real appreciation is upside \u2014 switch to Historical to see what ' +
+      'this area actually did.</div>';
+    el.innerHTML = html;
+    el.style.display = '';
+  }
+
+  // ======================================================================
+  // What-If — drag an assumption, watch the whole deal move
+  //
+  // Runs the same computeDeal() the wizard does, against a copy of the inputs.
+  // Nothing is written back to the form until Apply, so exploring is free and
+  // reversible; and because there is only one engine, the two views cannot
+  // drift apart.
+  // ======================================================================
+  var whatifSeed = null;      // inputs as they were when the page was opened
+  var whatifOverrides = {};   // only what the sliders have actually moved
+  var whatifGroupOpen = {};   // groups the user has since opened or closed
+
+  // Grouped the way the wizard groups its steps, because a flat column of two
+  // dozen sliders is a wall rather than a control. The defaults follow what
+  // actually gets dragged: the inputs that set the shape of the deal are open,
+  // the individual expense lines are one click away.
+  var WHATIF_GROUPS = [
+    { key: 'purchase', label: 'Purchase',           open: true  },
+    { key: 'loan',     label: 'Loan',               open: true  },
+    { key: 'income',   label: 'Income',             open: true  },
+    { key: 'opex',     label: 'Operating expenses', open: false },
+    { key: 'exit',     label: 'Assumptions & exit', open: false }
+  ];
+
+  // Ranges are relative to the seeded value so the slider is useful whether the
+  // property is $80K or $2M. `floorMax` covers the fields that legitimately
+  // seed at zero -- rehab, HOA, other income -- where scaling nothing by two is
+  // still nothing, so the ceiling falls back to an absolute figure.
+  //
+  // Left out on purpose: ARV and building % feed the 70% rule and the
+  // depreciation split rather than the return path, and square footage is
+  // descriptive only. Dragging them would move nothing shown here.
+  var WHATIF_SLIDERS = [
+    { key: 'price',           group: 'purchase', label: 'Purchase price', rel: [0.6, 1.4], step: 1000, fmt: 'money' },
+    { key: 'closingCosts',    group: 'purchase', label: 'Closing costs',  rel: [0, 2], floorMax: 20000, step: 250, fmt: 'money' },
+    { key: 'rehab',           group: 'purchase', label: 'Rehab budget',   rel: [0, 2], floorMax: 50000, step: 500, fmt: 'money' },
+
+    { key: 'dpPct',           group: 'loan',     label: 'Down payment',   abs: [0, 100],  step: 1,     fmt: 'pct' },
+    { key: 'rate',            group: 'loan',     label: 'Interest rate',  abs: [2, 12],   step: 0.125, fmt: 'pct' },
+    { key: 'termYears',       group: 'loan',     label: 'Loan term',      abs: [10, 40],  step: 5,     fmt: 'yrs' },
+    { key: 'points',          group: 'loan',     label: 'Points',         abs: [0, 5],    step: 0.25,  fmt: 'plain' },
+
+    { key: 'totalRent',       group: 'income',   label: 'Monthly rent',   rel: [0.6, 1.5], step: 25, fmt: 'money' },
+    { key: 'otherIncome',     group: 'income',   label: 'Other income',   rel: [0, 3], floorMax: 500, step: 25, fmt: 'money' },
+    { key: 'vacPct',          group: 'income',   label: 'Vacancy',        abs: [0, 25],   step: 0.5,  fmt: 'pct' },
+    { key: 'incomeGrowthPct', group: 'income',   label: 'Rent growth',    abs: [0, 8],    step: 0.25, fmt: 'pct' },
+
+    { key: 'taxesYr',         group: 'opex',     label: 'Property taxes', rel: [0, 2], floorMax: 12000, step: 100, fmt: 'money-yr' },
+    { key: 'insuranceYr',     group: 'opex',     label: 'Insurance',      rel: [0, 2], floorMax: 5000,  step: 50,  fmt: 'money-yr' },
+    { key: 'maintPct',        group: 'opex',     label: 'Maintenance',    abs: [0, 25],   step: 0.5,  fmt: 'pct' },
+    { key: 'capexPct',        group: 'opex',     label: 'CapEx reserve',  abs: [0, 30],   step: 0.5,  fmt: 'pct' },
+    { key: 'mgmtPct',         group: 'opex',     label: 'Management',     abs: [0, 20],   step: 0.5,  fmt: 'pct' },
+    { key: 'hoaMonth',        group: 'opex',     label: 'HOA',            rel: [0, 2], floorMax: 600, step: 25, fmt: 'money' },
+    { key: 'utilMonth',       group: 'opex',     label: 'Utilities',      rel: [0, 2], floorMax: 500, step: 25, fmt: 'money' },
+    { key: 'otherExpMonth',   group: 'opex',     label: 'Other expenses', rel: [0, 2], floorMax: 500, step: 25, fmt: 'money' },
+    { key: 'expGrowthPct',    group: 'opex',     label: 'Expense growth', abs: [0, 8],    step: 0.25, fmt: 'pct' },
+
+    // Wide enough to reach this ZIP's own Downturn scenario, which runs past
+    // -10%/yr in the weaker markets, and matching what readInputs() accepts.
+    { key: 'valueGrowthPct',  group: 'exit',     label: 'Appreciation',   abs: [-25, 15], step: 0.25, fmt: 'pct' },
+    // The form field is a <select>, so this steps through its options rather
+    // than a continuous range -- any other value could not be applied back.
+    { key: 'holdYears',       group: 'exit',     label: 'Hold period',    opts: [5, 10, 15, 20, 30], fmt: 'yrs' },
+    { key: 'sellingCostPct',  group: 'exit',     label: 'Selling costs',  abs: [0, 12],   step: 0.5,  fmt: 'pct' }
+  ];
+
+  function wfFmt(kind, v) {
+    if (kind === 'money') return '$' + fmtInt(v);
+    if (kind === 'money-yr') return '$' + fmtInt(v) + '/yr';
+    if (kind === 'yrs') return Math.round(v) + ' yr';
+    if (kind === 'plain') return fmt(v);
+    return fmt(v) + '%';
+  }
+
+  function whatifOpen() {
+    var seed = readInputs();
+    // Cash purchases have no loan sliders worth dragging, and a property with
+    // no price cannot be explored at all.
+    if (!seed.price || seed.price <= 0) {
+      $('whatifEmpty').style.display = '';
+      $('whatifBody').style.display = 'none';
+      return;
+    }
+    $('whatifEmpty').style.display = 'none';
+    $('whatifBody').style.display = '';
+    whatifSeed = seed;
+    whatifOverrides = {};
+    renderWhatifSliders();
+    whatifRecalc();
+  }
+
+  function wfSeedVal(sl) {
+    var v = whatifSeed[sl.key];
+    if (typeof v !== 'number' || isNaN(v)) v = 0;
+    return v;
+  }
+
+  // The slider element's own min/max/step, which is not the value range for
+  // `opts` sliders -- those index into the option list.
+  function wfRange(sl, seedVal) {
+    if (sl.opts) return { lo: 0, hi: sl.opts.length - 1, step: 1 };
+    if (sl.abs) return { lo: sl.abs[0], hi: sl.abs[1], step: sl.step };
+    var lo = Math.max(0, Math.round(seedVal * sl.rel[0] / sl.step) * sl.step);
+    var hi = Math.round(Math.max(seedVal * sl.rel[1], sl.floorMax || 0) / sl.step) * sl.step;
+    if (hi <= lo) hi = lo + sl.step * 10;
+    return { lo: lo, hi: hi, step: sl.step };
+  }
+
+  // Where the handle sits for a given value. Clamped, so a seed outside the
+  // range still renders a usable slider rather than pinning at an edge the
+  // browser picked.
+  function wfPos(sl, v, range) {
+    if (!sl.opts) return Math.min(range.hi, Math.max(range.lo, v));
+    var best = 0;
+    sl.opts.forEach(function(o, i) {
+      if (Math.abs(o - v) < Math.abs(sl.opts[best] - v)) best = i;
+    });
+    return best;
+  }
+
+  function whatifMovedKeys() {
+    return Object.keys(whatifOverrides).filter(function(k) {
+      return Math.abs(whatifOverrides[k] - whatifSeed[k]) > 1e-9;
+    });
+  }
+
+  function renderWhatifSliders() {
+    var html = '';
+    WHATIF_GROUPS.forEach(function(g) {
+      var rows = '';
+      WHATIF_SLIDERS.forEach(function(sl) {
+        if (sl.group !== g.key) return;
+        var seedVal = wfSeedVal(sl);
+        var cur = whatifOverrides.hasOwnProperty(sl.key) ? whatifOverrides[sl.key] : seedVal;
+        var range = wfRange(sl, seedVal);
+        rows += '<div class="wf-row" data-key="' + sl.key + '">' +
+          '<div class="wf-head"><span class="wf-name">' + sl.label + '</span>' +
+          '<span class="wf-cur" id="wfcur-' + sl.key + '">' + wfFmt(sl.fmt, cur) + '</span></div>' +
+          '<input type="range" min="' + range.lo + '" max="' + range.hi + '" step="' + range.step + '" ' +
+          'value="' + wfPos(sl, cur, range) + '" ' +
+          'oninput="whatifSlide(\'' + sl.key + '\', this.value)">' +
+          '<div class="wf-seed">now ' + wfFmt(sl.fmt, seedVal) + '</div></div>';
+      });
+      var open = whatifGroupOpen.hasOwnProperty(g.key) ? whatifGroupOpen[g.key] : g.open;
+      // The badge is always emitted and filled by whatifRecalc, so a change
+      // made inside a group that is later collapsed does not go invisible.
+      html += '<details class="wf-group"' + (open ? ' open' : '') +
+        ' ontoggle="whatifGroupToggle(\'' + g.key + '\', this.open)">' +
+        '<summary><span class="wf-group-title">' + g.label + '</span>' +
+        '<span class="wf-group-badge" id="wfbadge-' + g.key + '" style="display:none"></span></summary>' +
+        '<div class="wf-group-body">' + rows + '</div></details>';
+    });
+    $('whatifSliders').innerHTML = html;
+  }
+
+  window.whatifGroupToggle = function(key, open) { whatifGroupOpen[key] = open; };
+
+  window.whatifSlide = function(key, raw) {
+    var sl = WHATIF_SLIDERS.filter(function(x) { return x.key === key; })[0];
+    var v = sl.opts ? sl.opts[Math.round(parseFloat(raw))] : parseFloat(raw);
+    whatifOverrides[key] = v;
+    var cur = $('wfcur-' + key);
+    if (cur) {
+      cur.textContent = wfFmt(sl.fmt, v);
+      cur.classList.toggle('moved', Math.abs(v - whatifSeed[key]) > 1e-9);
+    }
+    // computeDeal is pure arithmetic over a 360-month schedule — fast enough
+    // to run on every frame, so a debounce would only add lag.
+    if (whatifRaf) cancelAnimationFrame(whatifRaf);
+    whatifRaf = requestAnimationFrame(whatifRecalc);
+  };
+  var whatifRaf = null;
+
+  function whatifInputs() {
+    var inp = Object.assign({}, whatifSeed, whatifOverrides);
+    // A cash purchase has no loan; keep the derived flags coherent with the
+    // down-payment slider rather than the seeded checkbox.
+    if (inp.dpPct >= 100) { inp.isCash = true; inp.rate = 0; inp.termYears = 0; inp.points = 0; }
+    else { inp.isCash = false; }
+    return inp;
+  }
+
+  function whatifRecalc() {
+    if (!whatifSeed) return;
+    var base = computeDeal(whatifSeed);
+    var now = computeDeal(whatifInputs());
+    renderWhatifHeadline(base, now);
+    renderWhatifTable(now);
+    renderWhatifChart(now);
+    var moved = whatifMovedKeys();
+    // Counts per group, so a collapsed group still advertises what is changed
+    // inside it. Updated here rather than by re-rendering, which would tear
+    // the slider out from under a drag in progress.
+    var perGroup = {};
+    moved.forEach(function(k) {
+      var sl = WHATIF_SLIDERS.filter(function(x) { return x.key === k; })[0];
+      if (sl) perGroup[sl.group] = (perGroup[sl.group] || 0) + 1;
+    });
+    WHATIF_GROUPS.forEach(function(g) {
+      var badge = $('wfbadge-' + g.key);
+      if (!badge) return;
+      var n = perGroup[g.key] || 0;
+      badge.textContent = n ? n + ' changed' : '';
+      badge.style.display = n ? '' : 'none';
+    });
+    $('whatifDirty').textContent = moved.length
+      ? moved.length + ' assumption' + (moved.length > 1 ? 's' : '') + ' changed — not yet applied'
+      : 'Matching your analysis';
+  }
+
+  function renderWhatifHeadline(base, now) {
+    var stats = [
+      { label: 'Monthly cash flow', v: now.monthlyCF, b: base.monthlyCF, money: true },
+      { label: 'Cash-on-cash', v: now.coc, b: base.coc, money: false },
+      { label: 'Cap rate', v: now.capRate, b: base.capRate, money: false },
+      { label: 'DSCR', v: now.dscr, b: base.dscr, money: false, plain: true },
+      { label: (now.holdYears || 5) + '-yr pre-tax profit', v: now.preTaxProfit, b: base.preTaxProfit, money: true },
+      // Null for a cash-negative deal with no root, and for a purchase with no
+      // cash in it -- the stat loop drops it rather than printing a placeholder.
+      { label: 'Pre-tax IRR', v: now.preTaxIRR, b: base.preTaxIRR, money: false }
+    ];
+    var html = '';
+    stats.forEach(function(s) {
+      if (s.v === null || s.v === undefined) return;
+      var txt = s.plain ? fmt(s.v) : (s.money ? fmtDollar(s.v) : fmtPct(s.v));
+      var d = s.v - (s.b || 0);
+      var delta = Math.abs(d) < 0.005 ? 'unchanged'
+        : (d > 0 ? '+' : '') + (s.plain ? fmt(d) : (s.money ? fmtDollar(d) : fmtPct(d))) + ' vs your analysis';
+      html += '<div class="wf-stat"><div class="wf-label">' + s.label + '</div>' +
+        '<div class="wf-value ' + (s.v >= 0 ? 'positive' : 'negative') + '">' + txt + '</div>' +
+        '<div class="wf-delta">' + delta + '</div></div>';
+    });
+    $('whatifHeadline').innerHTML = html;
+  }
+
+  var WHATIF_YEARS = [1, 2, 3, 4, 5, 10, 15, 20, 30];
+
+  // The full annual picture rather than a value/equity summary: income and
+  // expenses both grow, at different rates, so the year a deal turns is not
+  // something you can read off the equity curve. Wide on purpose -- the
+  // wrapper scrolls horizontally.
+  function renderWhatifTable(r) {
+    var rows = WHATIF_YEARS.filter(function(y) { return y <= r.projRows.length; });
+    var hold = r.holdYears || 5;
+    var html = '<thead><tr><th>Year</th><th>Income</th><th>Expenses</th>' +
+      '<th>Operating income</th><th>Cash flow</th><th>CoC</th>' +
+      '<th>Property value</th><th>Loan balance</th><th>Equity</th>' +
+      '<th>Profit if sold</th><th>Annualized</th></tr></thead><tbody>';
+    rows.forEach(function(y) {
+      var row = r.projRows[y - 1];
+      var exit = r.exitAt(r.valueGrowthPct, y);
+      var cur = (y === hold) ? ' class="current"' : '';
+      var sign = function(v) { return v >= 0 ? 'positive' : 'negative'; };
+      html += '<tr><td' + cur + '>' + y + (y === hold ? ' \u2190 exit' : '') + '</td>' +
+        '<td>$' + fmtInt(row.income) + '</td>' +
+        '<td>$' + fmtInt(row.opex) + '</td>' +
+        '<td>$' + fmtInt(row.noi) + '</td>' +
+        '<td class="' + sign(row.cf) + '">$' + fmtInt(row.cf) + '</td>' +
+        '<td class="' + sign(row.coc) + '">' + fmtPct(row.coc) + '</td>' +
+        '<td>$' + fmtInt(row.propVal) + '</td>' +
+        '<td>$' + fmtInt(row.loanBal) + '</td>' +
+        '<td>$' + fmtInt(row.equity) + '</td>' +
+        '<td class="' + sign(exit.preTaxProfit) + '">$' + fmtInt(exit.preTaxProfit) + '</td>' +
+        '<td class="' + sign(exit.preTaxAnnualizedROI) + '">' + fmtPct(exit.preTaxAnnualizedROI) + '</td></tr>';
+    });
+    html += '</tbody>';
+    $('whatifTable').innerHTML = html;
+  }
+
+  // Hand-rolled SVG: the project has no chart library and no build step, and
+  // adding a CDN dependency for three polylines would not be a good trade.
+  function renderWhatifChart(r) {
+    var W = 560, H = 220, PAD_L = 54, PAD_B = 22, PAD_T = 8, PAD_R = 8;
+    var rows = r.projRows;
+    if (!rows.length) { $('whatifChart').innerHTML = ''; return; }
+    var maxV = 0;
+    rows.forEach(function(p) {
+      maxV = Math.max(maxV, p.propVal, p.equity, p.loanBal);
+    });
+    if (!isFinite(maxV) || maxV <= 0) maxV = 1;
+    var x = function(i) { return PAD_L + (W - PAD_L - PAD_R) * (i / Math.max(1, rows.length - 1)); };
+    var y = function(v) { return PAD_T + (H - PAD_T - PAD_B) * (1 - v / maxV); };
+    var line = function(pick, color) {
+      var pts = rows.map(function(p, i) {
+        var v = pick(p);
+        if (!isFinite(v)) v = 0;
+        return x(i).toFixed(1) + ',' + y(v).toFixed(1);
+      }).join(' ');
+      return '<polyline fill="none" stroke="' + color + '" stroke-width="2" points="' + pts + '"/>';
+    };
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Property value, equity and loan balance over time">';
+    for (var g = 0; g <= 3; g++) {
+      var gv = maxV * g / 3, gy = y(gv);
+      svg += '<line x1="' + PAD_L + '" y1="' + gy.toFixed(1) + '" x2="' + (W - PAD_R) + '" y2="' + gy.toFixed(1) +
+             '" stroke="currentColor" stroke-opacity="0.12"/>' +
+             '<text x="' + (PAD_L - 6) + '" y="' + (gy + 3.5).toFixed(1) + '" font-size="9" text-anchor="end" fill="currentColor" fill-opacity="0.55">$' + fmtInt(gv / 1000) + 'K</text>';
+    }
+    svg += line(function(p) { return p.propVal; }, '#6366f1');
+    svg += line(function(p) { return p.equity; }, '#10b981');
+    svg += line(function(p) { return p.loanBal; }, '#ef4444');
+    [1, 5, 10, 20, 30].forEach(function(yr) {
+      if (yr > rows.length) return;
+      svg += '<text x="' + x(yr - 1).toFixed(1) + '" y="' + (H - 6) + '" font-size="9" text-anchor="middle" fill="currentColor" fill-opacity="0.55">Y' + yr + '</text>';
+    });
+    svg += '</svg>';
+    $('whatifChart').innerHTML =
+      '<div class="wf-chart-legend"><span class="lg-val">Property value</span>' +
+      '<span class="lg-eq">Equity</span><span class="lg-loan">Loan balance</span></div>' + svg;
+  }
+
+  window.whatifReset = function() {
+    whatifOverrides = {};
+    renderWhatifSliders();
+    whatifRecalc();
+  };
+
+  // Writing back marks each field as user-edited. Without that the next
+  // autofill silently overwrites what was just chosen deliberately.
+  var WHATIF_FIELD_MAP = {
+    price: 'purchasePrice', closingCosts: 'closingCosts', rehab: 'rehabBudget',
+    dpPct: 'downPayment', rate: 'interestRate', termYears: 'loanTerm', points: 'points',
+    totalRent: 'monthlyRent', otherIncome: 'otherIncome', vacPct: 'vacancy',
+    incomeGrowthPct: 'incomeGrowth',
+    taxesYr: 'propertyTaxes', insuranceYr: 'insurance', maintPct: 'maintenance',
+    capexPct: 'capex', mgmtPct: 'management', hoaMonth: 'hoa', utilMonth: 'utilities',
+    otherExpMonth: 'otherExpenses', expGrowthPct: 'expenseGrowth',
+    valueGrowthPct: 'valueGrowth', holdYears: 'holdYears',
+    sellingCostPct: 'sellingCostPct'
+  };
+
+  // Multi-unit rent is one figure on the slider and several inputs on the form.
+  // Scaling every unit by the same factor keeps the split the user entered; the
+  // last visible unit absorbs the rounding so the total is exactly what was
+  // shown. There is nothing to mark as user-edited -- the per-unit inputs carry
+  // no id and no auto-fill writes to them.
+  function applyUnitRents(newTotal) {
+    var count = Math.max(1, parseInt($('unitCount').value) || 1);
+    var inputs = $('unitRentsGrid').querySelectorAll('.unit-rent');
+    var last = Math.min(count, inputs.length) - 1;
+    if (last < 0) return false;
+    var seedTotal = 0, i;
+    for (i = 0; i <= last; i++) seedTotal += val(inputs[i], 0);
+    // With every unit at zero there are no proportions to preserve, so there is
+    // no defensible way to split the figure.
+    if (seedTotal <= 0) return false;
+    var scale = newTotal / seedTotal, running = 0;
+    for (i = 0; i <= last; i++) {
+      var v = (i === last) ? Math.round(newTotal - running) : Math.round(val(inputs[i], 0) * scale);
+      inputs[i].value = v;
+      running += v;
+    }
+    return true;
+  }
+
+  window.whatifApply = function() {
+    var applied = 0, skipped = 0;
+    Object.keys(whatifOverrides).forEach(function(key) {
+      var v = whatifOverrides[key];
+      if (Math.abs(v - whatifSeed[key]) < 1e-9) return;
+      if (key === 'totalRent' && whatifSeed.propertyType !== 'sfh') {
+        if (applyUnitRents(v)) applied++; else skipped++;
+        return;
+      }
+      var id = WHATIF_FIELD_MAP[key];
+      var el = id && $(id);
+      if (!el) return;
+      el.value = v;
+      userEditedFields[id] = true;
+      markSource(id, 'estimated');
+      applied++;
+    });
+    whatifSeed = readInputs();
+    whatifOverrides = {};
+    renderWhatifSliders();
+    whatifRecalc();
+    if (typeof calculate === 'function') calculate();
+    $('whatifDirty').textContent = applied
+      ? applied + ' value' + (applied > 1 ? 's' : '') + ' written to your analysis' +
+        (skipped ? ' — rent skipped, the unit rents are all zero' : '')
+      : (skipped ? 'Rent could not be split — the unit rents are all zero' : 'Nothing to apply');
+  };
+
+  // ======================================================================
   // Equity Chart (CSS bars)
   // ======================================================================
   function renderEquityChart(r) {
     var container = $('equityBars');
     container.innerHTML = '';
+
+    // Compounding one rate out to year 30 and printing it to the dollar is the
+    // most false-precise output in the app. Say so where it is displayed.
+    var note = $('equityChartNote');
+    if (note) {
+      note.textContent = 'A single path at ' + fmt(r.valueGrowthPct) + '%/yr, before selling costs. Income taxes are excluded. ' +
+        'Real prices do not compound smoothly \u2014 see the five-year range above for how wide the spread gets.';
+    }
 
     var years = [1, 5, 10, 15, 20, 25, 30];
     // Filter to loan term
@@ -3665,7 +5185,16 @@
     var html = '';
 
     function badge(field) {
-      return autoFilledFields[field] ? ' <span class="badge badge-zillow">Zillow</span>' : '';
+      if (!autoFilledFields[field]) return '';
+      var src = fieldSources[field] || 'zillow';
+      var cls = src === 'zillow' ? 'badge-zillow'
+              : src === 'redfin' ? 'badge-redfin'
+              : src.indexOf('rentcast') === 0 ? 'badge-rentcast'
+              : src === 'pdf' ? 'badge-pdf'
+              : src === 'estimated' ? 'badge-estimated'
+              : src === 'fhfa' ? 'badge-fhfa'
+              : 'badge-ai';
+      return ' <span class="badge ' + cls + '">' + (SOURCE_LABELS[src] || src) + '</span>';
     }
 
     // Purchase section
@@ -3682,8 +5211,7 @@
     html += reviewItem('Value Growth', val($('valueGrowth'), 0) + '%/yr');
     var sqftV = val($('sqft'), 0);
     if (sqftV > 0) html += reviewItem('Square Footage', fmtInt(sqftV) + ' sqft' + badge('sqft'));
-    html += reviewItem('Building Value %', val($('buildingPct'), 0) + '%');
-    html += reviewItem('Marginal Tax Rate', val($('taxRate'), 0) + '%');
+    html += reviewItem('Building Value % (tax context only)', val($('buildingPct'), 0) + '%');
     html += '</div></div>';
 
     // Loan section
@@ -3767,13 +5295,13 @@
     m += 'Break-even Occupancy: ' + fmtPct(r.breakeven) + ', DSCR: ' + (r.dscr !== null ? fmt(r.dscr) : 'N/A') + '\n';
     m += 'Total Cash to Close: ' + fmtDollar(r.totalCashClose) + '\n';
     m += 'OER: ' + fmtPct(r.oer) + ', CF/Unit: ' + fmtDollar(r.monthlyCFPerUnit) + '/mo\n';
-    m += 'Annual Depreciation: ' + fmtDollar(r.annualDepreciation) + ', Tax Savings: ' + fmtDollar(r.annualTaxSavings) + '\n';
-    m += 'After-Tax CF: ' + fmtDollar(r.afterTaxCF) + '/yr\n';
+    m += 'Income taxes are excluded from all return calculations.\n';
     if (r.pricePerSqft !== null) m += 'Price/Sqft: ' + fmtDollar(r.pricePerSqft) + ', Rent/Sqft: $' + fmt(r.rentPerSqft) + '\n';
-    m += '\n5-Year Total Return: ' + fmtDollar(r.totalReturn5yr) + '\n';
-    m += '  Cash Flow: ' + fmtDollar(r.totalReturnCF) + ', Appreciation: ' + fmtDollar(r.totalReturnAppreciation) + '\n';
-    m += '  Debt Paydown: ' + fmtDollar(r.totalReturnDebtPaydown) + ', Tax Benefits: ' + fmtDollar(r.totalReturnTaxBenefits) + '\n';
-    m += '5yr Annualized ROI: ' + fmtPct(r.annualized5yrROI) + '\n';
+    m += '\n' + r.holdYears + '-Year Pre-Tax Profit: ' + fmtDollar(r.preTaxProfit) + '\n';
+    m += '  Cash Flow: ' + fmtDollar(r.totalReturnCF) + ', Appreciation after selling costs: ' + fmtDollar(r.appreciationAfterSellingCosts) + '\n';
+    m += '  Debt Paydown: ' + fmtDollar(r.totalReturnDebtPaydown) + ', Upfront closing/rehab/points: -' + fmtDollar(r.closingCosts + r.rehab + r.pointsCost) + '\n';
+    m += 'Annualized Pre-Tax ROI: ' + fmtPct(r.preTaxAnnualizedROI) + '\n';
+    m += 'Pre-Tax IRR: ' + (r.preTaxIRR !== null ? fmtPct(r.preTaxIRR) : 'N/A') + '\n';
     m += 'Deal Score: ' + r.dealText + ' (' + r.dealPoints + '/' + r.dealMaxPoints + ' points)\n';
     r.dealFactors.forEach(function(f) {
       m += '  ' + f.name + ': ' + f.value + ' [' + f.verdict.toUpperCase() + '] — ' + f.reason + '\n';
@@ -3941,7 +5469,8 @@
 
   var SAVE_FIELDS = [
     'propName','purchasePrice','arv','closingCosts','rehabBudget','valueGrowth',
-    'sqft','buildingPct','taxRate','downPayment','interestRate','loanTerm','points',
+    'sqft','yearBuilt','buildingPct','holdYears','sellingCostPct',
+    'downPayment','interestRate','loanTerm','points',
     'monthlyRent','otherIncome','incomeGrowth','propertyTaxes','insurance',
     'maintenance','vacancy','capex','management','hoa','utilities','otherExpenses',
     'expenseGrowth','unitCount'
@@ -4002,8 +5531,10 @@
         breakeven: lastCalcResults.breakeven,
         oer: lastCalcResults.oer,
         annualCF: lastCalcResults.annualCF,
-        totalReturn5yr: lastCalcResults.totalReturn5yr,
-        annualized5yrROI: lastCalcResults.annualized5yrROI,
+        holdYears: lastCalcResults.holdYears,
+        preTaxProfit: lastCalcResults.preTaxProfit,
+        preTaxAnnualizedROI: lastCalcResults.preTaxAnnualizedROI,
+        preTaxIRR: lastCalcResults.preTaxIRR,
         dealPoints: lastCalcResults.dealPoints,
         dealMaxPoints: lastCalcResults.dealMaxPoints,
         dealText: lastCalcResults.dealText,
@@ -4096,8 +5627,10 @@
       { key: 'grm', label: 'GRM', fmt: fmtGRM, higher: false },
       { key: 'breakeven', label: 'Break-Even Occ.', fmt: fmtPct, higher: false },
       { key: 'oer', label: 'OER', fmt: fmtPct, higher: false },
-      { key: 'totalReturn5yr', label: '5yr Total Return', fmt: fmtDollar, higher: true },
-      { key: 'annualized5yrROI', label: '5yr ROI', fmt: fmtPct, higher: true },
+      { key: 'holdYears', label: 'Holding Period', fmt: function(v) { return v + ' years'; }, higher: false },
+      { key: 'preTaxProfit', label: 'Pre-Tax Profit', fmt: fmtDollar, higher: true },
+      { key: 'preTaxAnnualizedROI', label: 'Annualized Pre-Tax ROI', fmt: fmtPct, higher: true },
+      { key: 'preTaxIRR', label: 'Pre-Tax IRR', fmt: fmtPct, higher: true },
       { key: 'dealPoints', label: 'Deal Score', fmt: function(v, d) { return v + '/' + (d.dealMaxPoints || 14); }, higher: true }
     ];
 
@@ -4167,14 +5700,208 @@
     }
   });
 
+  // ======================================================================
+  // Glossary tooltips
+  // ======================================================================
+  // Keyed by the normalised label text so a (?) can be attached to every
+  // matching label at once, instead of hand-editing ~35 markup sites.
+  // Every `url` below was checked to return 200 in a real browser; terms with
+  // no reliable dedicated source carry a definition and no link, because a
+  // link that 404s or lands on an unrelated page is worse than none.
+  var IP = 'https://www.investopedia.com/terms/';
+  var GLOSSARY = {
+    'monthly cash flow': ['Rent left over after the mortgage, taxes, insurance and every operating expense. The number that decides whether the property pays you or you pay it.', IP + 'c/cashflow.asp'],
+    'cash-on-cash return': ['Annual pre-tax cash flow divided by the actual cash you put in (down payment, closing costs, rehab). Measures return on your money, not the property price.', IP + 'c/cashoncashreturn.asp'],
+    'cap rate': ['Net operating income divided by purchase price, ignoring financing. Lets you compare properties as assets regardless of how each is financed.', IP + 'c/capitalizationrate.asp'],
+    '10yr pre-tax annualized roi': ['Reconciled pre-tax profit over the selected hold expressed as a yearly compound rate. Unlike IRR, it ignores when cash flow arrives.', IP + 'r/returnoninvestment.asp'],
+    'noi': ['Net Operating Income: annual rent minus operating expenses, before any mortgage payment. The basis for cap rate and DSCR.', IP + 'n/noi.asp'],
+    'monthly mortgage (p&i)': ['Principal and interest only — the loan payment itself, excluding taxes, insurance and HOA.', IP + 'p/principal.asp'],
+    'monthly piti': ['Principal, Interest, Taxes and Insurance — the full monthly housing payment a lender counts.', IP + 'p/piti.asp'],
+    'total monthly expenses': ['Operating costs: vacancy, maintenance, CapEx, management, HOA and utilities. Excludes the mortgage.', 'https://en.wikipedia.org/wiki/Operating_expense'],
+    'gross rent multiplier': ['Price divided by annual gross rent. A rough price-to-rent yardstick; lower is cheaper relative to income.', 'https://en.wikipedia.org/wiki/Gross_rent_multiplier'],
+    'break-even occupancy': ['The share of the year the unit must be rented just to cover all costs. Above 100% means it cannot break even even fully occupied.', IP + 'b/breakevenpoint.asp'],
+    'dscr': ['Debt-Service Coverage Ratio: NOI divided by annual debt payments. Below 1.0 means income does not cover the loan; most lenders want 1.20+.', IP + 'd/dscr.asp'],
+    'total cash to close': ['Everything you must bring on day one: down payment, closing costs, points and rehab budget.', IP + 'c/closingcosts.asp'],
+    'operating expense ratio': ['Operating expenses as a share of gross income. Higher means more of each rent dollar is consumed by running the property.', IP + 'o/operating-expense-ratio.asp'],
+    'cf per unit (monthly)': ['Monthly cash flow divided by the number of units — lets you compare a duplex against a single-family house fairly.', IP + 'c/cashflow.asp'],
+    'rough annual depreciation': ['Optional tax context only. This shortcut uses the entered building allocation and does not change any underwriting return.', 'https://www.irs.gov/publications/p527'],
+    'price / sqft': ['Purchase price divided by living area. Useful for comparing against nearby sales.', IP + 'r/realestate.asp'],
+    'rent / sqft': ['Monthly rent divided by living area. Small units almost always command more per square foot than large ones.', IP + 'r/realestate.asp'],
+    'purchase price ($)': ['The contract price. Also the basis for your post-sale property tax assessment in most states.', IP + 'r/realestate.asp'],
+    'after repair value / arv ($)': ['What the property should be worth once renovations are finished. Drives the 70% rule for flips.', null],
+    'rehab / repair budget ($)': ['Total expected renovation cost. Chronically underestimated — add a contingency.', null],
+    'closing costs ($)': ['Fees to complete the purchase: lender charges, title, escrow, recording. Typically 2-5% of price.', IP + 'c/closingcosts.asp'],
+    'down payment (%)': ['Share of price paid in cash. Investment properties usually require 20-25%.', IP + 'd/down_payment.asp'],
+    'interest rate (%)': ['The annual rate on the loan. Small changes move cash flow substantially — see the sensitivity table.', IP + 'i/interestrate.asp'],
+    'loan term (years)': ['Years to repay. Longer terms lower the payment but raise total interest paid.', IP + 'm/mortgage.asp'],
+    'loan points': ['Fees paid upfront to buy down the interest rate. One point is 1% of the loan.', IP + 'd/discountpoints.asp'],
+    'monthly rent ($)': ['Expected gross monthly rent. The single most important input — every return metric scales with it.', null],
+    'other monthly income ($)': ['Non-rent income: parking, laundry, storage, pet fees.', null],
+    'vacancy rate (%)': ['Share of the year the unit sits empty between tenants. Local days-on-market is a good guide.', IP + 'v/vacancy-rate.asp'],
+    'repairs & maintenance (% of rent)': ['Ongoing upkeep — plumbing, appliances, turnover. Typically 5-10% of rent.', null],
+    'capex reserve (% of rent)': ['Money set aside for big-ticket replacements: roof, HVAC, water heater. Not a monthly bill, but it will come due.', IP + 'c/capitalexpenditure.asp'],
+    'property management (%)': ['Fee to a manager, usually 8-10% of collected rent. Count it even if self-managing — your time is not free.', null],
+    'property taxes / yr ($)': ['Annual tax owed. A sale usually reassesses the property near the purchase price, so the seller\'s current bill can understate yours.', IP + 'p/propertytax.asp'],
+    'insurance / yr ($)': ['Landlord/hazard policy. Varies enormously by state and wind/fire exposure.', IP + 'h/homeowners-insurance.asp'],
+    'hoa / month ($)': ['Homeowners association dues. A direct hit to cash flow and easy to overlook in new developments.', IP + 'h/hoa.asp'],
+    'building value %': ['Optional tax context only. A rough allocation of price to the structure rather than land; it does not affect underwriting returns.', 'https://www.irs.gov/publications/p527'],
+    'holding period': ['How long you plan to own it before selling. Drives every return figure, the projection table and the appreciation range. Longer holds dilute the fixed cost of buying and selling, and historically they narrow the spread of outcomes sharply \u2014 in one Central Valley ZIP the worst five-year stretch lost 59% while the worst fifteen-year stretch lost 5%.', 'https://www.fhfa.gov/data/hpi'],
+    'year built': ['Drives the maintenance and CapEx reserve more than any other input \u2014 a 1920s house replaces something most years, a new build is under warranty with every component at the start of its life. Filled from the listing when available; enter it yourself when it is not, because the fallback assumes a mid-life house.', 'https://www.irs.gov/publications/p527'],
+    'repairs & maintenance': ['Routine upkeep \u2014 service calls, leaks, turnover repairs. Sized from the building\u2019s replacement cost and age rather than a flat share of rent, because a furnace costs the same whether the unit rents for $1,200 or $3,000.', 'https://www.irs.gov/publications/p527'],
+    'capex reserve': ['Money set aside each month for big-ticket replacements \u2014 roof, HVAC, water heater, flooring, windows. Component-by-component these run roughly 1.1% of replacement cost a year, which is well above the 5%-of-rent figure commonly used.', 'https://en.wikipedia.org/wiki/Capital_expenditure'],
+    'appreciation \u2192 5-year return': ['How the whole deal changes if appreciation lands somewhere other than the base case. Rates come from this ZIP\u2019s own price history; the highlighted row is what the projections are currently using.', 'https://www.fhfa.gov/data/hpi'],
+    'property value growth': ['How fast the property is assumed to gain value each year. Defaults to roughly long-run inflation (2.5%), deliberately below what most areas historically did \u2014 so a deal has to work on cash flow and real appreciation stays upside rather than a load-bearing assumption. The ZIP\u2019s own measured history (FHFA repeat-sales index) drives the what-if scenarios and can lower this default further in weaker markets. Editable, and the least certain input in the model.', 'https://www.fhfa.gov/data/hpi'],
+    'selling costs': ['What it costs to get out: agent commissions, title, escrow and transfer taxes. Typically 6\u20138% of the sale price, and it comes straight off any gain.', 'https://en.wikipedia.org/wiki/Closing_costs'],
+    'appreciation after selling costs': ['Gain in value after estimated selling costs. Income taxes are intentionally excluded.', IP + 'a/appreciation.asp'],
+    'pre-tax net sale proceeds': ['Sale price less selling costs and the remaining loan balance. Income taxes are intentionally excluded.', IP + 'n/net-proceeds.asp'],
+    'pre-tax profit': ['All modeled operating cash flow and sale proceeds less the full initial cash investment. It includes selling costs but excludes income taxes.', IP + 'r/returnoninvestment.asp'],
+    'property value growth (%/yr)': ['Assumed yearly appreciation. Speculative — a deal that only works on appreciation is a bet, not a rental business.', IP + 'a/appreciation.asp'],
+    'annual income growth (%)': ['Assumed yearly rent increase.', null],
+    'annual expense growth (%)': ['Assumed yearly cost inflation. If it outpaces rent growth, cash flow erodes over time.', null],
+    'cash flow': ['Cumulative rent left after all costs across the holding period.', IP + 'c/cashflow.asp'],
+    'appreciation': ['Gain from the property rising in value. Not realised until you sell or refinance.', IP + 'a/appreciation.asp'],
+    'debt paydown': ['Equity built as tenants pay down your loan principal.', IP + 'a/amortization.asp'],
+    'total equity': ['Property value minus loan balance — your ownership stake.', IP + 'h/home_equity.asp'],
+    '1% rule': ['Screening shortcut: monthly rent should be at least 1% of purchase price. Rare in high-cost coastal markets.', IP + 'o/one-percent-rule.asp'],
+    '50% rule': ['Screening shortcut: assume operating expenses consume about half of gross rent.', null],
+    '70% rule': ['Flipping shortcut: pay no more than 70% of after-repair value minus rehab cost.', null]
+  };
+
+  // Match a label to a glossary entry, tolerating units and trailing markers.
+  function glossaryLookup(text) {
+    var k = (text || '').toLowerCase().replace(/\s+/g, ' ').trim()
+      .replace(/\s*\*$/, '').replace(/\s*optional$/, '');
+    if (GLOSSARY[k]) return GLOSSARY[k];
+    var stripped = k.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    if (GLOSSARY[stripped]) return GLOSSARY[stripped];
+    for (var key in GLOSSARY) { if (k.indexOf(key) === 0) return GLOSSARY[key]; }
+    return null;
+  }
+
+  function closeAllTips() {
+    document.querySelectorAll('.tip-pop.open').forEach(function(el) { el.classList.remove('open'); });
+  }
+
+  function makeHelpButton(entry) {
+    var wrap = document.createElement('span');
+    wrap.className = 'tip-wrap';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tip-btn';
+    btn.textContent = '?';
+    btn.setAttribute('aria-label', 'What does this mean?');
+    var pop = document.createElement('span');
+    pop.className = 'tip-pop';
+    pop.setAttribute('role', 'tooltip');
+    var body = document.createElement('span');
+    body.className = 'tip-text';
+    body.textContent = entry[0];
+    pop.appendChild(body);
+    if (entry[1]) {
+      var a = document.createElement('a');
+      a.href = entry[1];
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.className = 'tip-link';
+      a.textContent = 'Learn more →';
+      pop.appendChild(a);
+    }
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var wasOpen = pop.classList.contains('open');
+      closeAllTips();
+      if (!wasOpen) pop.classList.add('open');
+    });
+    wrap.appendChild(btn);
+    wrap.appendChild(pop);
+    return wrap;
+  }
+
+  function attachTooltips(root) {
+    var sels = '.metric-card .label, .pillar-label, .factor-label, label[for], .rule-card h4, .rule-title';
+    (root || document).querySelectorAll(sels).forEach(function(el) {
+      if (el.querySelector('.tip-wrap')) return;          // already annotated
+      var entry = glossaryLookup(el.textContent);
+      if (!entry) return;
+      el.appendChild(makeHelpButton(entry));
+    });
+  }
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest || !e.target.closest('.tip-wrap')) closeAllTips();
+  });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeAllTips(); });
+
+  attachTooltips();
+
+  // The markup carries a literal so the version is still visible when this
+  // file is opened directly; when served, the server's value always wins.
+  (function showVersion() {
+    var el = $('appVersion');
+    if (el && window.__APP_VERSION__) el.textContent = 'v' + window.__APP_VERSION__;
+  })();
+
+  // Upload fallbacks
+  $('uploadPdf').addEventListener('change', function() { handleUpload(this, 'PDF'); });
+  $('uploadShot').addEventListener('change', function() { handleUpload(this, 'screenshot'); });
+  $('uploadConfirmApply').addEventListener('click', applyUpload);
+  $('uploadConfirmCancel').addEventListener('click', function() {
+    pendingUpload = null;
+    $('uploadConfirm').style.display = 'none';
+    $('uploadStatus').textContent = '';
+  });
+  $('monthlyRent').addEventListener('input', function() { userEditedFields['monthlyRent'] = true; });
+  // The reserve is a dollar figure divided by rent, so the percentage is only
+  // valid for the rent it was computed against. Re-derive it when rent moves.
+  $('monthlyRent').addEventListener('input', debounce(function() {
+    applyCarryingCostRates(true);
+  }, 400));
+  $('vacancy').addEventListener('input', function() { userEditedFields['vacancy'] = true; });
+
+  // Screenshot reading needs a capable model; hide the control rather than
+  // accepting a file we cannot process.
+  (async function initCapabilities() {
+    try {
+      var resp = await fetch('/api/rentcast-usage');
+      var data = await resp.json();
+      if (!data.anthropic) {
+        $('uploadShotLabel').style.display = 'none';
+        $('uploadShot').disabled = true;
+      }
+      if (data.configured) updateUsageDisplay(data);
+    } catch (err) { /* offline: leave the controls as they are */ }
+  })();
+
   // Track user manual edits on closing costs and insurance
   $('closingCosts').addEventListener('input', function() { userEditedFields['closingCosts'] = true; });
   $('insurance').addEventListener('input', function() { userEditedFields['insurance'] = true; });
+  $('propertyTaxes').addEventListener('input', function() { userEditedFields['propertyTaxes'] = true; });
+  $('valueGrowth').addEventListener('input', function() { userEditedFields['valueGrowth'] = true; });
+  // The appreciation band is built from windows of the holding period, so the
+  // profile has to be refetched when the hold changes.
+  $('holdYears').addEventListener('change', function() {
+    applyAppreciation(true);
+    if (typeof calculate === 'function') calculate();
+  });
+  $('maintenance').addEventListener('input', function() { userEditedFields['maintenance'] = true; });
+  $('capex').addEventListener('input', function() { userEditedFields['capex'] = true; });
+  $('yearBuilt').addEventListener('input', function() { userEditedFields['yearBuilt'] = true; });
+  // Age is the single biggest driver of the reserve, so re-derive on change.
+  $('yearBuilt').addEventListener('input', debounce(function() {
+    applyCarryingCostRates(true);
+  }, 400));
+  $('sqft').addEventListener('input', debounce(function() {
+    applyCarryingCostRates(true);
+  }, 400));
 
-  // Purchase price changes update closing costs and insurance defaults
+  // Purchase price changes update every rate-derived default. Taxes track
+  // price because a sale reassesses the property at roughly what you paid.
   $('purchasePrice').addEventListener('input', debounce(function() {
     updateClosingCostsDefault();
     updateInsuranceDefault();
+    applyCarryingCostRates();
+    applyAppreciation();
     updateDpHelper();
   }, 150));
 
@@ -4184,8 +5911,8 @@
       propName:'456 Oak Avenue, Arlington VA 22201',
       purchasePrice:'250000', arv:'300000', closingCosts:'7500',
       rehabBudget:'15000', valueGrowth:'3', sqft:'1800',
-      buildingPct:'80', taxRate:'25',
-      downPayment:'20', interestRate:'6.5', loanTerm:'30', points:'0',
+      buildingPct:'80',
+      downPayment:'25', interestRate:'6.5', loanTerm:'30', points:'0',
       monthlyRent:'2800', otherIncome:'100', incomeGrowth:'2',
       propertyTaxes:'3000', insurance:'1500', maintenance:'5',
       vacancy:'5', capex:'5', management:'8',

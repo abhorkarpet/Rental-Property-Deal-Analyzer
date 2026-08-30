@@ -5,3 +5,7 @@ beautifulsoup4
 lxml
 python-dotenv
 playwright
+python-multipart
+pypdf
+pillow
+anthropic
