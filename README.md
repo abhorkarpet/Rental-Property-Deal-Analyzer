@@ -41,7 +41,8 @@ Free, open-source rental property investment calculator with AI-powered analysis
 - **Neighborhood Search** — search a zip code or city, score listings by investor metrics, then analyze the best ones
 - **Sensitivity analysis** — what-if tables for interest rate, vacancy, rent, purchase price, and appreciation
 - **Rent estimation** — a property-specific RentCast estimate with a low/high range, or scraped Redfin rental comps without a key
-- **Locally-sourced assumptions** — property tax rate, vacancy, appreciation and repair reserves derived from the property's own ZIP, age and size instead of national guesses
+- **Locally-sourced assumptions** — property tax rate, vacancy, appreciation and repair reserves derived from the property's own ZIP, state, age and size instead of national guesses
+- **Law-aware property-tax projection** — property tax grows separately from other expenses, applying verified rental-property assessment rules for CA, OR, MI, AZ, FL, NV and TX, with official-source links and a manual override for county or parcel exceptions
 - **PDF & screenshot upload** — when scraping is blocked, drop in a printed listing page and Claude reads the fields off it
 - **Mortgage rate auto-fill** — fetch current 30-year fixed rate from Freddie Mac with one click
 - **Deal alerts & CSV export** — highlight matching listings, export search results to spreadsheet
@@ -119,10 +120,28 @@ The version number shown under the page title tells you which build you are
 looking at — check it after restarting to confirm your changes are live.
 
 > **Restart after changing Python code.** `index.html` is re-read from disk on
-> every request, so front-end edits appear on refresh. API routes in `app.py`
+> every request, and files under `static/` are served directly, so front-end
+> edits appear on refresh. API routes in `app.py`
 > and the `providers/` modules are only registered at startup, so a stale
 > process serves the new page against the old endpoints and every new call
 > returns `404 Not Found`.
+
+### Testing
+
+The suite covers the calculation engine, API contracts, provider fallbacks,
+automatic listing hydration, all three browser entry paths, What-If, scenarios,
+comparison, CSV/HTML export, AI streaming, and mobile/print layouts.
+
+```bash
+.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+.venv/bin/python -m playwright install chromium
+node --test tests/core-calculation.test.js
+.venv/bin/python -m pytest -q
+```
+
+GitHub Actions runs the same commands on every push and pull request. The test
+suite also fails if `APP_VERSION` and the direct-file version in `index.html`
+do not match, so every release change must include a version bump.
 
 ### Environment Variables
 
@@ -140,7 +159,7 @@ looking at — check it after restarting to confirm your changes are live.
 
 ## How It Works
 
-The app has four modes, toggled on the first step:
+The app has three ways to start an analysis, selected on the first step:
 
 ### Single Property (default)
 
@@ -149,9 +168,9 @@ A **6-step wizard** for analyzing a specific property:
 1. **Property Info** — Address, price, type, ARV, rehab budget (paste a Zillow/Redfin URL, or upload a listing PDF or screenshot if scraping is blocked)
 2. **Financing** — Down payment, rate, term, points, closing costs (or toggle cash purchase). Click **Current Rate** to auto-fill the latest 30-year fixed mortgage rate from Freddie Mac.
 3. **Income** — Monthly rent (multi-unit support), other income, growth rate. Rent is estimated automatically: a property-specific RentCast AVM with a low/high range when a key is set, otherwise the ZIP's market data or scraped Redfin comps.
-4. **Expenses** — Taxes, insurance, HOA, utilities, percentage-based costs, expense growth. Property tax, insurance, vacancy, maintenance and CapEx all arrive pre-filled from the property's ZIP, state, age and size, each badged with its source and editable.
+4. **Expenses** — Taxes, insurance, HOA, utilities, percentage-based costs, expense growth. Property tax, insurance, vacancy, maintenance and CapEx all arrive pre-filled from the property's ZIP, state, age and size, each badged with its source and editable. Property-tax growth is projected separately under the displayed state rule; leave the override blank for automatic treatment or enter a fixed annual rate for a known local exception.
 5. **Review** — Summary of all inputs before calculating
-6. **Results** — Full dashboard with metrics, projections, sensitivity analysis, charts, and AI analysis
+6. **Results** — A concise decision summary, with separate **What-If** and **Full Details** views for stress testing and deeper underwriting
 
 ### Neighborhood Search
 
@@ -166,7 +185,13 @@ Fully automated deal discovery — enter a location and the app will:
 4. Score each listing with a [6-star Quick Score](#quick-score-6-stars) using estimated rent
 5. Show all results ranked by deal quality
 
-### What-If
+### Results: What-If
+
+What-If is available after a deal has been calculated because it stress-tests that
+deal; it is not a separate way to begin an analysis. Open it from the **What-If**
+tab on Results, while the default **Summary** stays focused on the verdict and key
+returns. Supporting ratios, projections, financing detail and AI analysis live in
+the separate **Full Details** tab.
 
 Every assumption the model uses is on a slider — 25 of them — grouped the way the
 wizard groups its steps, so the panel stays a control rather than a wall:

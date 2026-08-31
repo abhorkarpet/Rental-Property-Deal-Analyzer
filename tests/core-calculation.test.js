@@ -1,72 +1,22 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+const {
+  computeDeal,
+  computeQuickScore,
+  computeTaxContext
+} = require('../static/js/deal-engine.js');
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const context = { computeDeal, computeQuickScore, computeTaxContext };
 
-function extractFunction(name) {
-  const start = source.indexOf('function ' + name + '(');
-  assert.notEqual(start, -1, 'missing function ' + name);
-  const brace = source.indexOf('{', start);
-  let depth = 0;
-  let quote = null;
-  let escaped = false;
-  let lineComment = false;
-  let blockComment = false;
-
-  for (let i = brace; i < source.length; i++) {
-    const char = source[i];
-    const next = source[i + 1];
-    if (lineComment) {
-      if (char === '\n') lineComment = false;
-      continue;
-    }
-    if (blockComment) {
-      if (char === '*' && next === '/') {
-        blockComment = false;
-        i++;
-      }
-      continue;
-    }
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (char === '\\') escaped = true;
-      else if (char === quote) quote = null;
-      continue;
-    }
-    if (char === '/' && next === '/') {
-      lineComment = true;
-      i++;
-      continue;
-    }
-    if (char === '/' && next === '*') {
-      blockComment = true;
-      i++;
-      continue;
-    }
-    if (char === "'" || char === '"' || char === '`') {
-      quote = char;
-      continue;
-    }
-    if (char === '{') depth++;
-    if (char === '}' && --depth === 0) return source.slice(start, i + 1);
-  }
-  throw new Error('unclosed function ' + name);
-}
-
-const context = {
-  PROJECTION_YEARS: 30,
-  fmt: value => Number(value).toFixed(2),
-  fmtDollar: value => '$' + Number(value).toFixed(2),
-  fmtPct: value => Number(value).toFixed(2) + '%'
-};
-vm.createContext(context);
-vm.runInContext(
-  extractFunction('buildAmortSchedule') + '\n'
-    + extractFunction('computeDeal') + '\n'
-    + extractFunction('computeTaxContext'),
-  context
+const quickScore = computeQuickScore(
+  { price: 200000, estRent: 2200, apprPct: 2.5 },
+  null,
+  0.065
+);
+assert.ok(quickScore.numericScore > 0, 'quick scoring should be available from the shared engine');
+assert.equal(
+  computeQuickScore({ price: 200000 }, null, 0.065).numericScore,
+  0,
+  'a listing without rent must remain unscored'
 );
 
 const input = {
@@ -99,10 +49,18 @@ const input = {
   holdYears: 10,
   propertyType: 'sfh',
   unitCount: 1,
-  appreciationProfile: null
+  appreciationProfile: null,
+  projectionStartYear: 2026,
+  taxGrowthOverridePct: null,
+  propertyTaxPolicy: {
+    model: 'market_value', label: 'Projected market-value reassessment',
+    annual_cap_pct: null, coverage: 'general'
+  }
 };
 
 const result = context.computeDeal(input);
+assert.match(result.growthWarning, /Held 10 years/,
+  'the growth warning must use the selected hold period');
 const heldRow = result.projRows[result.holdYears - 1];
 const directProfit = heldRow.cumCF
   + result.preTaxNetSaleProceeds
@@ -140,5 +98,33 @@ flows[flows.length - 1] += result.preTaxNetSaleProceeds;
 const irrRate = result.preTaxIRR / 100;
 const irrNpv = flows.reduce((sum, flow, year) => sum + flow / Math.pow(1 + irrRate, year), 0);
 assert.ok(Math.abs(irrNpv) < 1e-6, 'reported pre-tax IRR must zero the same cash-flow vector');
+
+const caPolicy = {
+  model: 'assessed_value_cap', label: 'California Proposition 13',
+  annual_cap_pct: 2, reassesses_on_sale: true
+};
+const caDeal = context.computeDeal({
+  ...input, valueGrowthPct: 10, expGrowthPct: 20, propertyTaxPolicy: caPolicy
+});
+assert.equal(caDeal.projRows[0].propertyTax, input.taxesYr,
+  'year 1 must use the entered acquisition-year tax bill');
+assert.ok(Math.abs(caDeal.projRows[1].propertyTax - input.taxesYr * 1.02) < 1e-7,
+  'California tax projection must use the 2% assessment cap, not expense inflation');
+assert.ok(Math.abs(caDeal.projRows[4].propertyTax - input.taxesYr * Math.pow(1.02, 4)) < 1e-7,
+  'assessment cap must compound from the acquisition-year bill');
+
+const marketDeal = context.computeDeal({
+  ...input, valueGrowthPct: 10,
+  propertyTaxPolicy: { model: 'market_value', annual_cap_pct: null }
+});
+assert.ok(Math.abs(marketDeal.projRows[1].propertyTax - input.taxesYr * 1.10) < 1e-7,
+  'uncapped states must follow projected market value');
+
+const overrideDeal = context.computeDeal({
+  ...input, valueGrowthPct: 10, taxGrowthOverridePct: 4,
+  propertyTaxPolicy: caPolicy
+});
+assert.ok(Math.abs(overrideDeal.projRows[1].propertyTax - input.taxesYr * 1.04) < 1e-7,
+  'manual tax-growth override must take precedence over the state policy');
 
 console.log('core calculation tests: OK');

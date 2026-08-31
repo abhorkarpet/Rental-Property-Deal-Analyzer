@@ -5,6 +5,23 @@ import re
 import time
 from pathlib import Path
 
+
+STATE_NAMES = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "district of columbia": "DC", "florida": "FL", "georgia": "GA", "hawaii": "HI",
+    "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+    "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+    "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+    "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI",
+    "south carolina": "SC", "south dakota": "SD", "tennessee": "TN", "texas": "TX",
+    "utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA",
+    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+}
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -109,8 +126,16 @@ def extract_state(text: str | None) -> str | None:
     """
     if not text:
         return None
-    match = re.search(r",\s*([A-Z]{2})\s+\d{5}(?:-\d{4})?\b", text)
+    match = re.search(r",\s*([A-Z]{2})\s+\d{5}(?:-\d{4})?\b", text, re.IGNORECASE)
     if match:
-        return match.group(1)
-    match = re.search(r",\s*([A-Z]{2})\s*$", text.strip())
-    return match.group(1) if match else None
+        return match.group(1).upper()
+    match = re.search(r",\s*([A-Z]{2})\s*$", text.strip(), re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+    names = "|".join(re.escape(name) for name in sorted(STATE_NAMES, key=len, reverse=True))
+    match = re.search(
+        rf",\s*({names})(?:\s+\d{{5}}(?:-\d{{4}})?)?\s*$",
+        text.strip(),
+        re.IGNORECASE,
+    )
+    return STATE_NAMES.get(match.group(1).lower()) if match else None

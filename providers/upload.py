@@ -204,7 +204,7 @@ _BEDS_RE = re.compile(r"(?:(\d+)\s*(?:beds?|bd|br|bedrooms?)\b|(?:beds?|bedrooms
 _BATHS_RE = re.compile(
     r"(?:(\d+(?:\.\d)?)\s*(?:baths?|ba)\b|(?:baths?|bathrooms?)\s*:?\s*(\d+(?:\.\d)?))", re.I
 )
-_YEAR_RE = re.compile(r"year\s*built\s*:?\s*(\d{4})", re.I)
+_YEAR_RE = re.compile(r"(?:year\s*built|built\s+in)\s*:?\s*(\d{4})", re.I)
 _TAX_RE = re.compile(
     r"(?:annual\s*)?(?:property\s*)?tax(?:es)?\s*:?\s*\$?\s*([\d,]{3,})", re.I
 )

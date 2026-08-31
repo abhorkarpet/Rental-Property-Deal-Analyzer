@@ -1,13 +1,14 @@
 """Percentage-based estimates for carrying costs the listing doesn't provide.
 
-Property tax here is deliberately **rate-driven, not bill-driven**. On sale a
-property is reassessed at roughly the purchase price, so what the buyer will
-pay is `purchase price x local effective rate`. The seller's current bill is
-the wrong basis — under an assessment cap like California's Prop 13 a
-long-held home is assessed far below market, and its bill can understate the
-post-sale bill by thousands a year. The rate transfers across a sale; the
-bill does not.
+Property tax here estimates the acquisition-year bill from a local effective
+rate.  ``property_tax.py`` separately describes how that bill changes during
+the hold and whether a sale normally resets the assessment.  In reset-on-sale
+states such as California, a seller's capped bill can badly understate the new
+buyer's cost; in states such as Oregon, the current bill remains useful because
+the capped assessment does not routinely reset merely because of a sale.
 """
+
+from statistics import median
 
 from .base import extract_state
 
@@ -220,6 +221,31 @@ def vacancy_from_days_on_market(days_on_market: float | None) -> dict:
         "label": f"local rentals let in ~{int(days_on_market)} days",
         "floored": clamped != round(rate, 1),
     }
+
+
+def vacancy_from_comparables(comparables: list[dict] | None) -> dict:
+    """Derive local vacancy from the rental comps already paid for by an AVM."""
+    days = []
+    for comparable in comparables or []:
+        value = comparable.get("daysOnMarket")
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric > 0:
+            days.append(numeric)
+
+    if not days:
+        return vacancy_from_days_on_market(None)
+
+    typical_days = median(days)
+    result = vacancy_from_days_on_market(typical_days)
+    result["sample_size"] = len(days)
+    result["label"] = (
+        f"median of {len(days)} nearby rental comp"
+        f"{'s' if len(days) != 1 else ''} (~{int(round(typical_days))} days)"
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------

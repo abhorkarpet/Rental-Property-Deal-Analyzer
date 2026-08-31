@@ -3,4 +3,5 @@
 #
 #   pip install -r requirements-dev.txt
 #   python tools/build_hpi_table.py
+pytest
 openpyxl

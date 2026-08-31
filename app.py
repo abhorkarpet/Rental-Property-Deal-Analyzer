@@ -5,30 +5,54 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.responses import StreamingResponse
 import httpx
 from bs4 import BeautifulSoup
 import uvicorn
 
-from providers import appreciation, estimates, rentcast, upload
+from providers import (
+    appreciation,
+    estimates,
+    page_fetch,
+    property_tax,
+    rentcast,
+    upload,
+    zillow,
+)
 from providers.base import HEADERS, extract_state
-from providers.base import extract_zip as appreciation_zip
 from providers.redfin import (
     _detect_source,
     _extract_redfin,
-    _search_redfin_page,
     _search_redfin_rentals,
 )
+from schemas import NeighborhoodSearchRequest, SmartSearchRequest
+from services import search as search_service
 
 load_dotenv()
 app = FastAPI()
+BASE_DIR = Path(__file__).resolve().parent
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 # Single source of truth for the version shown in the UI. Last release tag was
 # v1.0.0. 1.1.0 added RentCast data, upload fallbacks and rate-based carrying
 # costs; 1.2.0 routes printed listing pages to the model and adds glossary
 # tooltips. 2.0.0 separates taxpayer-specific income taxes from the core
-# pre-tax underwriting model. Bump this and the served page follows automatically.
-APP_VERSION = "2.0.0"
+# pre-tax underwriting model. 2.1.0 adds law-aware property-tax projections.
+# 2.2.0 separates UI, calculation and search services and unifies listing
+# hydration across both search modes.
+# 2.3.0 separates Summary, What-If and Full Details and adds comprehensive
+# backend, provider and browser regression coverage with CI enforcement.
+# 2.3.1 keeps RentCast decisions visible throughout the wizard and adds
+# explicit RentCast and free-fallback retry paths for rent estimates.
+# 2.3.2 caches property AVMs, derives vacancy from their rental comparables,
+# and keeps quota continuations and cache hits out of the route rate limit.
+# 2.3.3 makes localhost quota-aware but non-blocking and prefers free Redfin
+# rent data before buying a new RentCast result.
+# 2.3.4 formats dollar inputs consistently without changing calculation values.
+# 2.3.5 fills missing Redfin vacancy from cached RentCast ZIP market data.
+# Bump this and the served page follows automatically.
+APP_VERSION = "2.3.5"
 
 
 # ---------------------------------------------------------------------------
@@ -36,485 +60,21 @@ APP_VERSION = "2.0.0"
 # ---------------------------------------------------------------------------
 _rate_limits: dict[str, list[float]] = defaultdict(list)
 
-# Most searches cover one or two zips; cap the fan-out so a wide search can't
-# quietly spend a large share of the monthly RentCast quota.
-MAX_MARKET_ZIPS_PER_SEARCH = 3
-
-
-# Text that only appears on a bot-challenge or error page, never on a listing.
-_BLOCK_MARKERS = (
-    "captcha",
-    "access to this page has been denied",
-    "awswafcookie",
-    "unusual traffic",
-    "are you a human",
-    "press & hold",
-)
-
-
-def _looks_like_listing_page(html: str | None) -> bool:
-    """Is this the real listing page, or a challenge page wearing its status code?
-
-    Redfin now answers automated requests with HTTP 202 and a ~2KB AWS WAF
-    challenge that contains none of the usual block words. Checking the status
-    code alone accepted that stub as the page, so extraction failed and the
-    Playwright fallback — which works — was never reached. Require positive
-    evidence of a listing instead of merely the absence of known block text.
-    """
-    if not html or len(html) < 20000:
-        return False
-    head = html[:5000].lower()
-    if any(marker in head for marker in _BLOCK_MARKERS):
-        return False
-    # Both sites carry the listing in structured data; without it there is
-    # nothing for the extractors to read anyway.
-    return "application/ld+json" in html or "__NEXT_DATA__" in html
-
-
 def _check_rate_limit(ip: str, limit: int, window: int = 60) -> bool:
     """Return True if the request is within rate limits."""
     now = time.time()
     timestamps = _rate_limits[ip]
-    # Prune old entries
     _rate_limits[ip] = [t for t in timestamps if now - t < window]
     if len(_rate_limits[ip]) >= limit:
         return False
     _rate_limits[ip].append(now)
     return True
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
-def _safe_get(obj, *keys, default=None):
-    """Safely traverse nested dicts/lists."""
-    current = obj
-    for key in keys:
-        try:
-            if isinstance(current, dict):
-                current = current[key]
-            elif isinstance(current, (list, tuple)):
-                current = current[int(key)]
-            else:
-                return default
-        except (KeyError, IndexError, TypeError, ValueError):
-            return default
-    return current
-
-
-def _format_address(addr_obj):
-    """Build a single-line address from Zillow address dict."""
-    if not addr_obj or not isinstance(addr_obj, dict):
-        return None
-    parts = [
-        addr_obj.get("streetAddress", ""),
-        addr_obj.get("city", ""),
-    ]
-    state = addr_obj.get("state", "")
-    zipcode = addr_obj.get("zipcode", "")
-    state_zip = f"{state} {zipcode}".strip()
-    line = ", ".join(p for p in parts if p)
-    if state_zip:
-        line = f"{line}, {state_zip}" if line else state_zip
-    return line or None
-
-
-def _extract_tax_history(raw_history):
-    """Normalise Zillow taxHistory array."""
-    if not raw_history or not isinstance(raw_history, list):
-        return []
-    result = []
-    for entry in raw_history:
-        if not isinstance(entry, dict):
-            continue
-        year = entry.get("time") or entry.get("year")
-        amount = entry.get("taxPaid") or entry.get("amount")
-        # 'time' is sometimes an epoch-ms; convert to year
-        if isinstance(year, (int, float)) and year > 3000:
-            from datetime import datetime, timezone
-            try:
-                year = datetime.fromtimestamp(year / 1000, tz=timezone.utc).year
-            except Exception:
-                pass
-        if year is not None:
-            result.append({"year": int(year) if year else None, "amount": amount})
-    return result
-
-
-def _get_image_url(prop):
-    """Extract a representative image URL."""
-    url = prop.get("hiResImageLink")
-    if url:
-        return url
-    photos = prop.get("responsivePhotos") or prop.get("photos") or []
-    if photos and isinstance(photos, list):
-        first = photos[0]
-        if isinstance(first, dict):
-            # Try multiple known sub-paths
-            for subkey in ("mixedSources", "sources"):
-                sources = first.get(subkey)
-                if sources and isinstance(sources, dict):
-                    for quality in ("jpeg", "webp", "png"):
-                        imgs = sources.get(quality)
-                        if imgs and isinstance(imgs, list):
-                            # pick the largest
-                            best = max(imgs, key=lambda x: x.get("width", 0) if isinstance(x, dict) else 0)
-                            if isinstance(best, dict) and best.get("url"):
-                                return best["url"]
-            # Direct url on photo object
-            if first.get("url"):
-                return first["url"]
-    return None
-
-
-def _build_result(prop):
-    """Build the flat result dict from a Zillow property dict."""
-    tax_history = _extract_tax_history(prop.get("taxHistory"))
-    annual_tax = None
-    if tax_history:
-        annual_tax = tax_history[0].get("amount")
-
-    lot_size = prop.get("lotSize") or prop.get("lotAreaValue")
-    # lotSize sometimes comes as a string like "6,000 sqft"
-    if isinstance(lot_size, str):
-        nums = re.findall(r"[\d,]+", lot_size)
-        if nums:
-            try:
-                lot_size = int(nums[0].replace(",", ""))
-            except ValueError:
-                lot_size = None
-
-    return {
-        "address": _format_address(prop.get("address")),
-        "price": prop.get("price") or prop.get("listPrice"),
-        "beds": prop.get("bedrooms"),
-        "baths": prop.get("bathrooms"),
-        "sqft": prop.get("livingArea"),
-        "lotSize": lot_size,
-        "yearBuilt": prop.get("yearBuilt"),
-        "propertyType": prop.get("homeType"),
-        "zestimate": prop.get("zestimate"),
-        "rentZestimate": prop.get("rentZestimate"),
-        "taxHistory": tax_history,
-        "annualTax": annual_tax,
-        "hoaFee": prop.get("monthlyHoaFee") or 0,
-        "description": prop.get("description"),
-        "imageUrl": _get_image_url(prop),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Extraction strategies
-# ---------------------------------------------------------------------------
-
-def _extract_from_next_data(soup):
-    """Primary: parse __NEXT_DATA__ -> gdpClientCache / apiCache."""
-    script_tag = soup.find("script", id="__NEXT_DATA__")
-    if not script_tag or not script_tag.string:
-        return None
-
-    try:
-        next_data = json.loads(script_tag.string)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-    # Strategy A: gdpClientCache (most common)
-    gdp_cache = _safe_get(next_data, "props", "pageProps", "gdpClientCache")
-    if gdp_cache and isinstance(gdp_cache, (dict, str)):
-        # gdpClientCache may itself be a JSON string
-        if isinstance(gdp_cache, str):
-            try:
-                gdp_cache = json.loads(gdp_cache)
-            except json.JSONDecodeError:
-                gdp_cache = {}
-
-        if isinstance(gdp_cache, dict):
-            for _key, value in gdp_cache.items():
-                # Each value is often a stringified JSON blob
-                parsed = value
-                if isinstance(value, str):
-                    try:
-                        parsed = json.loads(value)
-                    except json.JSONDecodeError:
-                        continue
-
-                # Look for property data
-                prop = None
-                if isinstance(parsed, dict):
-                    prop = parsed.get("property")
-                    if not prop:
-                        # Sometimes nested under data -> property
-                        prop = _safe_get(parsed, "data", "property")
-                if prop and isinstance(prop, dict):
-                    return _build_result(prop)
-
-    # Strategy B: apiCache
-    api_cache = _safe_get(next_data, "props", "pageProps", "apiCache")
-    if api_cache and isinstance(api_cache, (dict, str)):
-        if isinstance(api_cache, str):
-            try:
-                api_cache = json.loads(api_cache)
-            except json.JSONDecodeError:
-                api_cache = {}
-
-        if isinstance(api_cache, dict):
-            for _key, value in api_cache.items():
-                parsed = value
-                if isinstance(value, str):
-                    try:
-                        parsed = json.loads(value)
-                    except json.JSONDecodeError:
-                        continue
-                if isinstance(parsed, dict):
-                    prop = parsed.get("property")
-                    if not prop:
-                        prop = _safe_get(parsed, "data", "property")
-                    if prop and isinstance(prop, dict):
-                        return _build_result(prop)
-
-    # Strategy C: direct pageProps.property (newer layouts)
-    prop = _safe_get(next_data, "props", "pageProps", "property")
-    if prop and isinstance(prop, dict) and (prop.get("address") or prop.get("price")):
-        return _build_result(prop)
-
-    # Strategy D: componentProps (may contain its own gdpClientCache)
-    comp_props = _safe_get(next_data, "props", "pageProps", "componentProps")
-    if comp_props and isinstance(comp_props, dict):
-        # D1: direct property on componentProps values
-        for _key, value in comp_props.items():
-            if isinstance(value, dict):
-                prop = value.get("property")
-                if prop and isinstance(prop, dict):
-                    return _build_result(prop)
-
-        # D2: gdpClientCache nested inside componentProps
-        gdp_nested = comp_props.get("gdpClientCache")
-        if gdp_nested:
-            if isinstance(gdp_nested, str):
-                try:
-                    gdp_nested = json.loads(gdp_nested)
-                except json.JSONDecodeError:
-                    gdp_nested = {}
-            if isinstance(gdp_nested, dict):
-                for _key, value in gdp_nested.items():
-                    parsed = value
-                    if isinstance(value, str):
-                        try:
-                            parsed = json.loads(value)
-                        except json.JSONDecodeError:
-                            continue
-                    if isinstance(parsed, dict):
-                        prop = parsed.get("property")
-                        if not prop:
-                            prop = _safe_get(parsed, "data", "property")
-                        if prop and isinstance(prop, dict):
-                            return _build_result(prop)
-
-    return None
-
-
-def _extract_from_ld_json(soup):
-    """Fallback: parse application/ld+json structured data."""
-    ld_scripts = soup.find_all("script", type="application/ld+json")
-    for tag in ld_scripts:
-        if not tag.string:
-            continue
-        try:
-            data = json.loads(tag.string)
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-        # Can be a list or single object
-        items = data if isinstance(data, list) else [data]
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            item_type = item.get("@type", "")
-            if item_type in ("SingleFamilyResidence", "Residence", "Product", "House", "Apartment"):
-                # ld+json has a different shape; map what we can
-                address_obj = item.get("address", {})
-                if isinstance(address_obj, dict):
-                    addr = {
-                        "streetAddress": address_obj.get("streetAddress", ""),
-                        "city": address_obj.get("addressLocality", ""),
-                        "state": address_obj.get("addressRegion", ""),
-                        "zipcode": address_obj.get("postalCode", ""),
-                    }
-                else:
-                    addr = None
-
-                floor_size = item.get("floorSize", {})
-                sqft = None
-                if isinstance(floor_size, dict):
-                    sqft = floor_size.get("value")
-                elif isinstance(floor_size, (int, float)):
-                    sqft = floor_size
-
-                price = None
-                offers = item.get("offers", {})
-                if isinstance(offers, dict):
-                    price = offers.get("price")
-                if not price:
-                    price = item.get("price")
-
-                return {
-                    "address": _format_address(addr) if addr else item.get("name"),
-                    "price": price,
-                    "beds": item.get("numberOfRooms") or item.get("bedrooms"),
-                    "baths": item.get("bathrooms"),
-                    "sqft": sqft,
-                    "lotSize": None,
-                    "yearBuilt": item.get("yearBuilt"),
-                    "propertyType": item_type,
-                    "zestimate": None,
-                    "rentZestimate": None,
-                    "taxHistory": [],
-                    "annualTax": None,
-                    "hoaFee": 0,
-                    "description": item.get("description"),
-                    "imageUrl": item.get("image"),
-                }
-    return None
-
-
-def _extract_from_dom(soup):
-    """Fallback: extract property data from rendered DOM elements and meta tags."""
-    result = {
-        "address": None, "price": None, "beds": None, "baths": None,
-        "sqft": None, "lotSize": None, "yearBuilt": None, "propertyType": None,
-        "zestimate": None, "rentZestimate": None, "taxHistory": [],
-        "annualTax": None, "hoaFee": 0, "description": None, "imageUrl": None,
-    }
-
-    # Try og:title for address
-    og_title = soup.find("meta", property="og:title")
-    if og_title and og_title.get("content"):
-        result["address"] = og_title["content"].split("|")[0].strip()
-
-    # Try og:image
-    og_image = soup.find("meta", property="og:image")
-    if og_image and og_image.get("content"):
-        result["imageUrl"] = og_image["content"]
-
-    # Try meta description for details
-    meta_desc = soup.find("meta", attrs={"name": "description"})
-    if meta_desc and meta_desc.get("content"):
-        desc = meta_desc["content"]
-        result["description"] = desc
-
-        # Parse common patterns like "$350,000 - 3 bed, 2 bath, 1,500 sqft"
-        price_m = re.search(r"\$[\d,]+", desc)
-        if price_m:
-            try:
-                result["price"] = int(price_m.group().replace("$", "").replace(",", ""))
-            except ValueError:
-                pass
-
-        beds_m = re.search(r"(\d+)\s*(?:bed|br)", desc, re.IGNORECASE)
-        if beds_m:
-            result["beds"] = int(beds_m.group(1))
-
-        baths_m = re.search(r"(\d+(?:\.\d+)?)\s*(?:bath|ba)", desc, re.IGNORECASE)
-        if baths_m:
-            result["baths"] = float(baths_m.group(1))
-
-        sqft_m = re.search(r"([\d,]+)\s*(?:sq\s*ft|sqft)", desc, re.IGNORECASE)
-        if sqft_m:
-            try:
-                result["sqft"] = int(sqft_m.group(1).replace(",", ""))
-            except ValueError:
-                pass
-
-    # Search for JSON-like data blobs in script tags (Zillow often embeds property
-    # data in various script tags beyond __NEXT_DATA__)
-    for script in soup.find_all("script"):
-        text = script.string or ""
-        if not text or len(text) < 100:
-            continue
-
-        # Look for common Zillow data patterns
-        for pattern in [r'"price"\s*:\s*(\d+)', r'"listPrice"\s*:\s*(\d+)']:
-            m = re.search(pattern, text)
-            if m and not result["price"]:
-                try:
-                    result["price"] = int(m.group(1))
-                except ValueError:
-                    pass
-
-        if not result["beds"]:
-            m = re.search(r'"bedrooms"\s*:\s*(\d+)', text)
-            if m:
-                result["beds"] = int(m.group(1))
-
-        if not result["baths"]:
-            m = re.search(r'"bathrooms"\s*:\s*([\d.]+)', text)
-            if m:
-                result["baths"] = float(m.group(1))
-
-        if not result["sqft"]:
-            m = re.search(r'"livingArea"\s*:\s*(\d+)', text)
-            if m:
-                result["sqft"] = int(m.group(1))
-
-        if not result["yearBuilt"]:
-            m = re.search(r'"yearBuilt"\s*:\s*(\d{4})', text)
-            if m:
-                result["yearBuilt"] = int(m.group(1))
-
-        if not result["zestimate"]:
-            m = re.search(r'"zestimate"\s*:\s*(\d+)', text)
-            if m:
-                result["zestimate"] = int(m.group(1))
-
-        if not result["rentZestimate"]:
-            m = re.search(r'"rentZestimate"\s*:\s*(\d+)', text)
-            if m:
-                result["rentZestimate"] = int(m.group(1))
-
-    # Only return if we found at least an address or price
-    if result["address"] or result["price"]:
-        return result
-
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Playwright fallback fetcher
-# ---------------------------------------------------------------------------
-
-async def _fetch_with_playwright(url: str) -> str:
-    """Use a headless browser to fetch the page (bypasses bot detection)."""
-    from playwright.async_api import async_playwright
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        context = await browser.new_context(
-            user_agent=HEADERS["User-Agent"],
-            viewport={"width": 1280, "height": 900},
-            locale="en-US",
-            timezone_id="America/New_York",
-        )
-        page = await context.new_page()
-
-        # Remove webdriver flag to avoid bot detection
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        """)
-
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        # Wait for JS to populate data (Zillow is heavily JS-rendered)
-        await page.wait_for_timeout(3000)
-
-        # Try scrolling to trigger lazy-loaded content
-        await page.evaluate("window.scrollBy(0, 300)")
-        await page.wait_for_timeout(1000)
-
-        html = await page.content()
-        await browser.close()
-    return html
+def _is_local_request(request: Request) -> bool:
+    """Local desktop use is trusted and must not throttle its own workflow."""
+    host = request.client.host if request.client else ""
+    return host in {"127.0.0.1", "::1", "localhost"}
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +86,7 @@ IS_CLOUD = bool(os.environ.get("RENDER") or os.environ.get("RAILWAY_ENVIRONMENT"
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
-    html = Path("index.html").read_text(encoding="utf-8")
+    html = (BASE_DIR / "index.html").read_text(encoding="utf-8")
     if IS_CLOUD:
         # Inject flag so frontend can disable scraping-dependent features
         html = html.replace("</head>", '<script>window.__CLOUD_DEMO__=true;</script></head>')
@@ -547,357 +107,73 @@ async def serve_frontend():
 
 
 @app.post("/api/search")
-async def search_neighborhood(request: Request):
-    """Search for listings in a neighborhood/zip/city via Redfin."""
+async def search_neighborhood(
+    request: Request, payload: NeighborhoodSearchRequest
+):
     client_ip = request.client.host if request.client else "unknown"
-    if not _check_rate_limit(f"search:{client_ip}", 3):
+    if not _is_local_request(request) and not _check_rate_limit(
+        f"search:{client_ip}", 3
+    ):
         return JSONResponse(
             {"error": "Too many searches. Please wait a minute before trying again."},
             status_code=429,
         )
 
-    body = await request.json()
-    location = (body.get("location") or "").strip()
+    location = payload.location.strip()
     if not location:
         return JSONResponse({"error": "Location is required."}, status_code=400)
-    if len(location) > 200:
-        return JSONResponse({"error": "Location query is too long."}, status_code=400)
 
     filters = {
-        "min_price": body.get("min_price"),
-        "max_price": body.get("max_price"),
-        "min_beds": body.get("min_beds"),
-        "property_type": body.get("property_type"),
-        "max_results": min(body.get("max_results", 25), 75),
+        "min_price": payload.min_price,
+        "max_price": payload.max_price,
+        "min_beds": payload.min_beds,
+        "property_type": payload.property_type,
+        "max_results": payload.max_results,
     }
-
-    result = await _search_redfin_page(location, filters)
-
-    if "error" in result and "listings" not in result:
-        return JSONResponse({"error": result["error"]}, status_code=404)
-
-    await _attach_market_rents(result, location, body.get("allow_overage", False))
-    _attach_appreciation(result, location)
-
+    try:
+        result = await search_service.neighborhood_search(
+            location, filters, payload.allow_overage or _is_local_request(request)
+        )
+    except search_service.SearchError as exc:
+        return JSONResponse({"error": exc.message}, status_code=exc.status_code)
     return JSONResponse(result)
 
 
-async def _attach_market_rents(
-    result: dict, location: str, allow_overage: bool = False
-) -> None:
-    """Give each listing its own rent estimate, in place.
-
-    Without this the frontend applies one typed rent to every row, which makes
-    cash flow, the 1% rule, and GRM monotonic in price — the grid collapses to
-    "cheapest first" and a 385 sqft studio scores like a 4-bedroom house.
-    """
-    listings = result.get("listings") or []
-    if not listings or not rentcast.is_configured():
-        return
-
-    # A city search spans several zip codes with genuinely different rent
-    # profiles (Manteca is 95336 and 95337), so score each listing against its
-    # own zip rather than borrowing one zip's numbers for the whole page.
-    # Market data is cached per zip for 24h, so a repeat search is free.
-    fallback_zip = (
-        rentcast.zip_from_address(result.get("location_label") or "")
-        or rentcast.zip_from_address(location)
-    )
-    zips: list[str] = []
-    for listing in listings:
-        zip_code = rentcast.zip_from_address(listing.get("address")) or fallback_zip
-        listing["_zip"] = zip_code
-        if zip_code and zip_code not in zips:
-            zips.append(zip_code)
-
-    if not zips:
-        return
-
-    # Guard the quota: a stray search shouldn't fan out into many calls.
-    fetched: dict[str, dict] = {}
-    for zip_code in zips[:MAX_MARKET_ZIPS_PER_SEARCH]:
-        market = await rentcast.market_data(zip_code, allow_overage)
-        if market.get("gate"):
-            result["quota_gate"] = market["gate"]
-            break
-        if market.get("data"):
-            fetched[zip_code] = market["data"]
-
-    if not fetched:
-        return
-
-    # Anything beyond the fan-out cap falls back to a zip we did fetch.
-    default_zip = next(iter(fetched))
-    for listing in listings:
-        data = fetched.get(listing.pop("_zip", None) or default_zip) or fetched[default_zip]
-        estimate = rentcast.rent_from_market(
-            data, listing.get("beds"), listing.get("sqft")
-        )
-        if estimate:
-            listing["estRent"] = estimate["rent"]
-            listing["rentSource"] = "rentcast_market"
-            listing["rentSampleSize"] = estimate.get("sample_size")
-            listing["rentDaysOnMarket"] = estimate.get("days_on_market")
-
-    result["rent_zips"] = list(fetched)
-    result["rentcast_usage"] = rentcast.usage()
-
-
 @app.post("/api/smart-search")
-async def smart_search(request: Request):
-    """Smart Deal Finder: search listings + auto-estimate rent from market data.
-
-    Strategy: fetch rentals first, compute a smart max price from rent data,
-    then search for-sale listings within that price range so results are
-    more likely to be viable investment deals.
-    """
+async def smart_search(request: Request, payload: SmartSearchRequest):
     client_ip = request.client.host if request.client else "unknown"
-    if not _check_rate_limit(f"smart:{client_ip}", 3):
+    if not _is_local_request(request) and not _check_rate_limit(
+        f"smart:{client_ip}", 3
+    ):
         return JSONResponse(
             {"error": "Too many searches. Please wait a minute before trying again."},
             status_code=429,
         )
 
-    body = await request.json()
-    location = (body.get("location") or "").strip()
+    location = payload.location.strip()
     if not location:
         return JSONResponse({"error": "Location is required."}, status_code=400)
-    if len(location) > 200:
-        return JSONResponse({"error": "Location query is too long."}, status_code=400)
 
-    user_min_beds = body.get("min_beds")
-    user_property_type = body.get("property_type")
-    min_price = body.get("min_price") or 25000
-    user_max_results = body.get("max_results") or 50
-
-    # Step 1+2: Fetch rental data AND for-sale listings IN PARALLEL
-    # Use a generous max price for the initial search; we'll filter down
-    # once we know the smart price cap from rental data.
-    initial_filters = {
-        "min_price": min_price,
-        "max_price": 750000,  # generous cap; will narrow after rent data
-        "min_beds": user_min_beds,
-        "property_type": user_property_type or "house",
-        "max_results": min(user_max_results + 20, 80),
-        "sort": "price-asc",
-    }
-
-    # Run rentals, for-sale listings, AND mortgage rate fetch in parallel
-    rental_beds = user_min_beds if user_min_beds and user_min_beds >= 2 else None
-    rentals_task = asyncio.create_task(_search_redfin_rentals(location, rental_beds))
-    listings_task = asyncio.create_task(_search_redfin_page(location, initial_filters))
-    rate_task = asyncio.create_task(_ensure_mortgage_rate())
-    rentals_result, listings_result, _ = await asyncio.gather(
-        rentals_task, listings_task, rate_task
-    )
-
-    # Build rent lookup by bedroom count
-    rent_by_beds: dict[int, list[int]] = {}
-    all_rents: list[int] = []
-    for r in rentals_result.get("rentals", []):
-        rent_val = r.get("rent", 0)
-        if rent_val <= 0:
-            continue
-        all_rents.append(rent_val)
-        b = r.get("beds")
-        if b is not None and b > 0:
-            rent_by_beds.setdefault(b, []).append(rent_val)
-
-    # Compute median rent per bedroom count, and also the 75th percentile
-    rent_median_by_beds: dict[int, int] = {}
-    rent_p75_by_beds: dict[int, int] = {}
-    for beds, rents in rent_by_beds.items():
-        rents.sort()
-        rent_median_by_beds[beds] = rents[len(rents) // 2]
-        rent_p75_by_beds[beds] = rents[min(int(len(rents) * 0.75), len(rents) - 1)]
-
-    overall_median = 0
-    overall_p75 = 0
-    if all_rents:
-        all_rents.sort()
-        overall_median = all_rents[len(all_rents) // 2]
-        overall_p75 = all_rents[min(int(len(all_rents) * 0.75), len(all_rents) - 1)]
-
-    # Prefer RentCast's zip statistics over scraped rental listings when a
-    # key is present: it is a real statistical sample rather than whatever
-    # Redfin happened to show, and it carries rent-per-sqft so each listing
-    # can be priced by its own size further down.
-    market_zip_data = None
-    if rentcast.is_configured():
-        market_zip = rentcast.zip_from_address(
-            listings_result.get("location_label") or ""
-        ) or rentcast.zip_from_address(location)
-        if not market_zip:
-            for listing in listings_result.get("listings") or []:
-                market_zip = rentcast.zip_from_address(listing.get("address"))
-                if market_zip:
-                    break
-        if market_zip:
-            market_result = await rentcast.market_data(
-                market_zip, bool(body.get("allow_overage"))
-            )
-            market_zip_data = market_result.get("data")
-            if market_zip_data:
-                market_median = (market_zip_data.get("rentalData") or {}).get("medianRent")
-                if market_median:
-                    overall_median = market_median
-
-    # Compute smart max price from rent data
-    # Use median (not P75) to avoid luxury apartment skew.
-    # Multiplier of 200 (~0.5% rent/price) is conservative for 7% rate
-    # environment — deals above this ratio rarely cash-flow positive.
-    smart_max_price = None
-    if overall_median > 0:
-        # Use overall median (not max across bedrooms) to avoid
-        # inflated caps from high-bedroom luxury rentals.
-        # Multiplier of 250 ≈ GRM 20.8, upper bound for viable investment deals.
-        # See README "Smart Price Cap" section for the multiplier table.
-        best_rent = overall_median
-        smart_max_price = int(best_rent * 250)
-        smart_max_price = ((smart_max_price + 24999) // 25000) * 25000
-        smart_max_price = max(smart_max_price, 75000)
-
-    if "error" in listings_result and "listings" not in listings_result:
-        return JSONResponse({"error": listings_result["error"]}, status_code=404)
-
-    # If no rental data at all, we can't score deals meaningfully
-    if not all_rents and not market_zip_data:
-        return JSONResponse(
-            {"error": "No rental data found for this area. Try a nearby zip code — rent comps are needed to estimate deals."},
-            status_code=404,
+    try:
+        result = await search_service.smart_deals(
+            location=location,
+            min_beds=payload.min_beds,
+            property_type=payload.property_type,
+            min_price=payload.min_price,
+            max_results=payload.max_results,
+            allow_overage=payload.allow_overage or _is_local_request(request),
+            ensure_mortgage_rate=_ensure_mortgage_rate,
         )
-
-    listings = listings_result.get("listings", [])
-
-    # Filter by smart max price (initial search used generous $500K cap)
-    if smart_max_price and listings:
-        listings = [l for l in listings if l.get("price", 0) <= smart_max_price]
-
-    if not listings:
-        return JSONResponse(
-            {"error": "No for-sale listings found. Try a different location."},
-            status_code=404,
-        )
-
-    # Step 4: Filter out likely vacant parcels
-    # Addresses starting with "0 " are empty land listings on Redfin
-    listings = [
-        l for l in listings
-        if not (l.get("address") or "").strip().startswith("0 ")
-    ]
-
-    # Step 5: Attach estimated rent to each listing
-    # Use bedroom-specific rent when available, otherwise find closest match.
-    # Prefer a blend over bedroom-specific rent when it's >30% above the
-    # overall median — likely skewed by luxury apartments.
-    for listing in listings:
-        beds = listing.get("beds")
-        bed_rent = None
-        if beds and beds in rent_median_by_beds:
-            bed_rent = rent_median_by_beds[beds]
-        elif beds and rent_median_by_beds:
-            closest = min(rent_median_by_beds.keys(), key=lambda b: abs(b - beds))
-            bed_rent = rent_median_by_beds[closest]
-
-        if bed_rent and overall_median > 0:
-            # If bedroom-specific rent is >30% above overall median, it may be
-            # skewed by luxury apartments. Use a blend to moderate the estimate.
-            if bed_rent > overall_median * 1.3:
-                listing["estRent"] = int((bed_rent + overall_median) / 2)
-            else:
-                listing["estRent"] = bed_rent
-        elif bed_rent:
-            listing["estRent"] = bed_rent
-        elif overall_median > 0:
-            listing["estRent"] = overall_median
-        else:
-            listing["estRent"] = None
-
-        # A size-scaled market estimate beats a bedroom median, because it
-        # separates a 385 sqft studio from a 2,400 sqft house.
-        if market_zip_data:
-            scaled = rentcast.rent_from_market(
-                market_zip_data, listing.get("beds"), listing.get("sqft")
-            )
-            if scaled:
-                listing["estRent"] = scaled["rent"]
-                listing["rentSource"] = "rentcast_market"
-                listing["rentSampleSize"] = scaled.get("sample_size")
-                listing["rentDaysOnMarket"] = scaled.get("days_on_market")
-
-        # Sanity cap: rent shouldn't exceed 2% of price monthly (24% annual).
-        # Even aggressive cash-flow markets rarely exceed 1.5%.
-        # Floor of $500 ensures very cheap properties get usable estimates.
-        price = listing.get("price") or 0
-        if listing["estRent"] and price > 0:
-            max_plausible_rent = max(int(price * 0.02), 500)
-            listing["estRent"] = min(listing["estRent"], max_plausible_rent)
-
-    # Cap to user's requested max
-    listings = listings[:user_max_results]
-
-    # Rent confidence: how reliable is the estimate?
-    rent_count = len(all_rents)
-    rent_confidence = "high" if rent_count >= 15 else "medium" if rent_count >= 5 else "low"
-
-    # Include current mortgage rate for scoring calibration
-    current_rate = _mortgage_rate_cache.get("rate")
-
-    smart_result = {"listings": listings}
-    _attach_appreciation(smart_result, location)
-
-    return JSONResponse({
-        "listings": listings,
-        "appreciation": smart_result.get("appreciation"),
-        "total": listings_result.get("total", len(listings)),
-        "location_label": listings_result.get("location_label", location),
-        "rent_stats": rentals_result.get("stats"),
-        "rent_by_beds": {str(k): v for k, v in rent_median_by_beds.items()},
-        "smart_max_price": smart_max_price,
-        "rent_confidence": rent_confidence,
-        "mortgage_rate": current_rate,
-        "rentcast_usage": rentcast.usage(),
-    })
+    except search_service.SearchError as exc:
+        return JSONResponse({"error": exc.message}, status_code=exc.status_code)
+    return JSONResponse(result)
 
 
-# ---------------------------------------------------------------------------
+
 # Mortgage Rate — FRED API (free, no key required for this endpoint)
 # ---------------------------------------------------------------------------
 _mortgage_rate_cache: dict = {"rate": None, "fetched_at": 0}
 
-
-def _attach_appreciation(result: dict, location: str) -> None:
-    """Give each listing its own appreciation rate, in place.
-
-    Unlike the rent estimate above this needs no API key and costs nothing —
-    it is a local table lookup — so it runs for every search regardless of how
-    RentCast is configured. The point is that a listing scores against the same
-    appreciation assumption in the grid as it will in the analyzer.
-    """
-    listings = result.get("listings") or []
-    if not listings:
-        return
-
-    fallback = result.get("location_label") or location
-    resolved: dict[str, dict] = {}
-    for listing in listings:
-        address = listing.get("address") or fallback
-        key = appreciation_zip(address) or appreciation_zip(fallback) or "_"
-        if key not in resolved:
-            resolved[key] = appreciation.resolve_appreciation(
-                address=address if key != "_" else fallback
-            )
-        profile = resolved[key]
-        # Screen on the conservative rate for the same reason the analyzer
-        # defaults to it: a row should not rank well on assumed appreciation.
-        listing["apprPct"] = profile["conservative_pct"]
-        listing["apprHistoricalPct"] = profile["rate_pct"]
-        listing["apprSource"] = profile["source"]
-
-    # The grid shows one line of provenance rather than repeating it per row.
-    primary = next(iter(resolved.values()), None)
-    if primary:
-        result["appreciation"] = primary
 
 
 async def _ensure_mortgage_rate() -> float | None:
@@ -934,14 +210,7 @@ async def get_mortgage_rate():
 
 @app.post("/api/rent-estimate")
 async def estimate_rent(request: Request):
-    """Estimate market rent for a location using Redfin rental listings."""
-    client_ip = request.client.host if request.client else "unknown"
-    if not _check_rate_limit(f"rent:{client_ip}", 3):
-        return JSONResponse(
-            {"error": "Too many requests. Please wait a minute."},
-            status_code=429,
-        )
-
+    """Estimate rent without blocking local analysis on a provider quota."""
     body = await request.json()
     location = (body.get("location") or "").strip()
     if not location:
@@ -951,10 +220,95 @@ async def estimate_rent(request: Request):
 
     beds = body.get("beds")
     address = (body.get("address") or "").strip()
-    allow_overage = bool(body.get("allow_overage"))
+    local_auto_continue = _is_local_request(request)
+    allow_overage = bool(body.get("allow_overage")) or local_auto_continue
+    skip_rentcast = bool(body.get("skip_rentcast"))
 
-    # Tier 1: property-specific AVM. The range matters more than the point
-    # estimate — it answers whether the deal still works at the low end.
+    # The UI's explicit quota decision is a continuation of the original
+    # analysis, not a new search. Cached AVMs are local reads. Neither should
+    # consume the small public burst allowance or make the app throttle its
+    # own normal workflow.
+    cached_avm = (
+        not skip_rentcast
+        and rentcast.is_configured()
+        and address
+        and rentcast.has_cached_rent_estimate(
+            address,
+            beds=beds,
+            baths=body.get("baths"),
+            sqft=body.get("sqft"),
+            property_type=body.get("property_type"),
+        )
+    )
+    client_ip = request.client.host if request.client else "unknown"
+    if (
+        not local_auto_continue
+        and not (allow_overage or skip_rentcast or cached_avm)
+        and not _check_rate_limit(f"rent:{client_ip}", 3)
+    ):
+        return JSONResponse(
+            {"error": "Too many new rent searches. Please wait a minute."},
+            status_code=429,
+        )
+
+    # Tier 1: an exact AVM already bought for this property is the cheapest and
+    # most specific answer. Reading it does not touch RentCast or Redfin.
+    if cached_avm:
+        avm = await rentcast.rent_estimate(
+            address,
+            beds=beds,
+            baths=body.get("baths"),
+            sqft=body.get("sqft"),
+            property_type=body.get("property_type"),
+            allow_overage=allow_overage,
+        )
+        if avm.get("data") and avm["data"].get("rent"):
+            return JSONResponse(_rentcast_avm_payload(avm))
+
+    # Tier 2: Redfin is free. Prefer its bedroom-filtered active rental set
+    # whenever it produces a usable local median.
+    redfin_result = await _search_redfin_rentals(location, beds)
+    redfin_stats = redfin_result.get("stats") or {}
+    if redfin_stats.get("count") and redfin_stats.get("median"):
+        vacancy = estimates.vacancy_from_days_on_market(
+            redfin_stats.get("medianDaysOnMarket")
+        )
+        # Redfin rental cards often omit days on market. Keep its free rent
+        # median, but fill only the missing vacancy signal from the persisted
+        # ZIP market cache. Local analysis may populate that cache without
+        # stopping at the soft quota; remote callers must explicitly allow it.
+        if (
+            vacancy.get("source") == "default"
+            and not skip_rentcast
+            and rentcast.is_configured()
+            and allow_overage
+        ):
+            vacancy = await _zip_market_vacancy(
+                location, address, beds, allow_overage
+            )
+        return JSONResponse({
+            "estimate": {
+                "rent": redfin_stats["median"],
+                "rent_low": redfin_stats.get("low"),
+                "rent_high": redfin_stats.get("high"),
+                "source": "redfin",
+                "label": f"Redfin active rentals in {location}",
+                "sample_size": redfin_stats["count"],
+            },
+            "comparables": redfin_result.get("rentals") or [],
+            "vacancy": vacancy,
+            "free_source": True,
+            "usage": rentcast.usage(),
+        })
+
+    if skip_rentcast:
+        if "error" in redfin_result:
+            return JSONResponse({"error": redfin_result["error"]}, status_code=404)
+        return JSONResponse(redfin_result)
+
+    # Tier 3: property-specific RentCast AVM. Localhost is explicitly allowed
+    # to continue past the configured monthly reserve; remote users still see
+    # the quota decision before any potentially billable request.
     if rentcast.is_configured() and address:
         avm = await rentcast.rent_estimate(
             address,
@@ -965,32 +319,30 @@ async def estimate_rent(request: Request):
             allow_overage=allow_overage,
         )
         if avm.get("gate"):
-            fallback = await _zip_market_rent(location, address, beds, body.get("sqft"))
+            fallback = await _zip_market_rent(
+                location, address, beds, body.get("sqft")
+            )
             payload = {
                 "quota_gate": avm["gate"],
                 "usage": rentcast.usage(),
-                "vacancy": await _zip_vacancy(location, address, beds),
+                "vacancy": estimates.vacancy_from_days_on_market(
+                    fallback.get("days_on_market") if fallback else None
+                ),
             }
             if fallback:
                 payload["estimate"] = fallback
             return JSONResponse(payload)
         if avm.get("data") and avm["data"].get("rent"):
-            data = avm["data"]
-            return JSONResponse({
-                "estimate": {
-                    "rent": data["rent"],
-                    "rent_low": data.get("rent_low"),
-                    "rent_high": data.get("rent_high"),
-                    "source": "rentcast_avm",
-                    "label": "RentCast property estimate",
-                },
-                "comparables": data.get("comparables") or [],
-                "vacancy": await _zip_vacancy(location, address, beds),
-                "usage": rentcast.usage(),
-            })
+            return JSONResponse(_rentcast_avm_payload(avm))
 
-    # Tier 2: zip-level market data (free once cached for that zip).
-    market_estimate = await _zip_market_rent(location, address, beds, body.get("sqft"))
+    # Tier 4: ZIP market data is the last provider fallback. It is cached, and
+    # localhost can buy it without interrupting the wizard if no free data or
+    # property AVM was available.
+    market_estimate = None
+    if rentcast.is_configured():
+        market_estimate = await _zip_market_rent(
+            location, address, beds, body.get("sqft"), allow_overage
+        )
     if market_estimate:
         return JSONResponse({
             "estimate": market_estimate,
@@ -1000,42 +352,31 @@ async def estimate_rent(request: Request):
             "usage": rentcast.usage(),
         })
 
-    # Tier 3: scrape Redfin rental listings.
-    result = await _search_redfin_rentals(location, beds)
-
-    if "error" in result:
-        return JSONResponse({"error": result["error"]}, status_code=404)
-
-    return JSONResponse(result)
+    if "error" in redfin_result:
+        return JSONResponse({"error": redfin_result["error"]}, status_code=404)
+    return JSONResponse(redfin_result)
 
 
-async def _zip_vacancy(location: str, address: str, beds) -> dict:
-    """Vacancy implied by how fast rentals let in this zip.
-
-    Uses the same cached market call as the rent estimate, so it costs nothing
-    extra, and falls back to the flat default when there is no local signal.
-    """
-    if not rentcast.is_configured():
-        return estimates.vacancy_from_days_on_market(None)
-    zip_code = rentcast.zip_from_address(address) or rentcast.zip_from_address(location)
-    if not zip_code:
-        return estimates.vacancy_from_days_on_market(None)
-    market = await rentcast.market_data(zip_code)
-    if not market.get("data"):
-        return estimates.vacancy_from_days_on_market(None)
-    # Prefer the bedroom class being analysed; a studio and a 4-bed do not
-    # turn over at the same speed.
-    stats = rentcast.rent_from_market(market["data"], beds, None)
-    days = stats.get("days_on_market") if stats else None
-    if days is None:
-        days = ((market["data"].get("rentalData") or {})).get("medianDaysOnMarket")
-    result = estimates.vacancy_from_days_on_market(days)
-    result["zip"] = zip_code
-    return result
+def _rentcast_avm_payload(avm: dict) -> dict:
+    """Normalize a fresh or cached property AVM into the API response shape."""
+    data = avm["data"]
+    return {
+        "estimate": {
+            "rent": data["rent"],
+            "rent_low": data.get("rent_low"),
+            "rent_high": data.get("rent_high"),
+            "source": "rentcast_avm",
+            "label": "RentCast property estimate",
+        },
+        "comparables": data.get("comparables") or [],
+        "vacancy": estimates.vacancy_from_comparables(data.get("comparables")),
+        "cached": bool(avm.get("cached")),
+        "usage": rentcast.usage(),
+    }
 
 
 async def _zip_market_rent(
-    location: str, address: str, beds, sqft
+    location: str, address: str, beds, sqft, allow_overage: bool = False
 ) -> dict | None:
     """Zip-level rent estimate scaled by size. Free after the first call per zip."""
     if not rentcast.is_configured():
@@ -1043,7 +384,7 @@ async def _zip_market_rent(
     zip_code = rentcast.zip_from_address(address) or rentcast.zip_from_address(location)
     if not zip_code:
         return None
-    market = await rentcast.market_data(zip_code)
+    market = await rentcast.market_data(zip_code, allow_overage)
     if not market.get("data"):
         return None
     estimate = rentcast.rent_from_market(market["data"], beds, sqft)
@@ -1053,18 +394,47 @@ async def _zip_market_rent(
     return estimate
 
 
+async def _zip_market_vacancy(
+    location: str, address: str, beds, allow_overage: bool = False
+) -> dict:
+    """Return ZIP-level vacancy, using RentCast's persisted market cache."""
+    fallback = estimates.vacancy_from_days_on_market(None)
+    if not rentcast.is_configured():
+        return fallback
+    zip_code = rentcast.zip_from_address(address) or rentcast.zip_from_address(location)
+    if not zip_code:
+        return fallback
+
+    market = await rentcast.market_data(zip_code, allow_overage)
+    market_data = market.get("data")
+    if not market_data:
+        return fallback
+
+    bedroom_stats = rentcast.rent_from_market(market_data, beds, None)
+    days_on_market = (
+        bedroom_stats.get("days_on_market") if bedroom_stats else None
+    )
+    if not days_on_market:
+        days_on_market = (market_data.get("rentalData") or {}).get(
+            "medianDaysOnMarket"
+        )
+
+    vacancy = estimates.vacancy_from_days_on_market(days_on_market)
+    if vacancy.get("source") == "market":
+        vacancy["zip"] = zip_code
+        vacancy["label"] = (
+            f"{vacancy['label']} in {zip_code} (RentCast market data)"
+        )
+    return vacancy
+
+
 @app.post("/api/tax-rate")
 async def tax_rate(request: Request):
-    """Local effective property tax rate, applied to the purchase price.
-
-    Rate-driven rather than bill-driven on purpose: a sale reassesses the
-    property at roughly the purchase price, so the seller's current bill can
-    badly understate what the buyer will owe.
-    """
+    """Local effective rate plus the state's rental-property growth policy."""
     body = await request.json()
     address = (body.get("address") or "").strip()
     price = body.get("price")
-    allow_overage = bool(body.get("allow_overage"))
+    allow_overage = bool(body.get("allow_overage")) or _is_local_request(request)
     # Optional: present whenever the listing gave us size and age, which is
     # most of the time since both are scraped.
     sqft = body.get("sqft")
@@ -1082,13 +452,15 @@ async def tax_rate(request: Request):
             elif result.get("data"):
                 zip_rate = result["data"].get("rate")
 
-    resolved = estimates.resolve_tax_rate(zip_rate, address)
+    state = extract_state(address)
+    resolved = estimates.resolve_tax_rate(zip_rate, address, state=state)
     insurance = estimates.insurance_estimate(price=price, sqft=sqft, address=address)
 
     payload = {
         "tax": {
             **resolved,
             "annual": estimates.annual_cost(price, resolved["rate"]),
+            "policy": property_tax.resolve_policy(state),
         },
         "insurance": insurance,
         "reserves": estimates.reserve_rates(
@@ -1097,7 +469,7 @@ async def tax_rate(request: Request):
             address=address,
             monthly_rent=monthly_rent,
         ),
-        "state": extract_state(address),
+        "state": state,
         "usage": rentcast.usage(),
     }
     if gate:
@@ -1194,13 +566,14 @@ async def extract_upload(request: Request, file: UploadFile = File(...)):
 
 
 @app.get("/api/rentcast-usage")
-async def rentcast_usage():
+async def rentcast_usage(request: Request):
     """Monthly request counter for the UI."""
     return JSONResponse({
         "configured": rentcast.is_configured(),
         # Screenshot reading needs a capable model, so the UI hides that
         # control when no Anthropic key is present.
         "anthropic": upload.ai_available(),
+        "local_auto_continue": _is_local_request(request),
         **rentcast.usage(),
     })
 
@@ -1251,7 +624,7 @@ async def scrape_property(request: Request):
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
             resp = await client.get(url, headers=HEADERS)
-        if resp.status_code < 400 and _looks_like_listing_page(resp.text):
+        if resp.status_code < 400 and page_fetch.looks_like_listing_page(resp.text):
             html_text = resp.text
     except httpx.RequestError:
         pass
@@ -1259,8 +632,8 @@ async def scrape_property(request: Request):
     # Attempt 2: Playwright headless browser
     if html_text is None:
         try:
-            candidate = await _fetch_with_playwright(url)
-            if candidate and _looks_like_listing_page(candidate):
+            candidate = await page_fetch.fetch_with_playwright(url)
+            if candidate and page_fetch.looks_like_listing_page(candidate):
                 html_text = candidate
         except Exception:
             pass
@@ -1300,15 +673,7 @@ async def scrape_property(request: Request):
         )
 
     # Zillow extraction strategies
-    result = _extract_from_next_data(soup)
-    if result:
-        return JSONResponse(result)
-
-    result = _extract_from_ld_json(soup)
-    if result:
-        return JSONResponse(result)
-
-    result = _extract_from_dom(soup)
+    result = zillow.extract(soup)
     if result:
         return JSONResponse(result)
 

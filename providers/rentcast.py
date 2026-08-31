@@ -32,6 +32,7 @@ SIZE_SCALING_EXPONENT = 0.5
 _DATA_DIR = Path(__file__).resolve().parent.parent
 _market_cache = TTLCache(24 * 3600, _DATA_DIR / ".rentcast_market_cache.json")
 _tax_rate_cache = TTLCache(24 * 3600, _DATA_DIR / ".rentcast_tax_cache.json")
+_rent_cache = TTLCache(24 * 3600, _DATA_DIR / ".rentcast_rent_cache.json")
 
 # App property type -> RentCast's enum.
 PROPERTY_TYPE_MAP = {
@@ -46,6 +47,37 @@ PROPERTY_TYPE_MAP = {
     "multi-family": "Multi-Family",
     "apartment": "Apartment",
 }
+
+
+def _rent_cache_key(
+    address: str,
+    beds: float | None = None,
+    baths: float | None = None,
+    sqft: int | None = None,
+    property_type: str | None = None,
+) -> str:
+    """Stable key for a property AVM and the attributes that affect it."""
+    normalized_address = " ".join(address.lower().split())
+    mapped_type = PROPERTY_TYPE_MAP.get((property_type or "").strip().lower())
+    return json.dumps(
+        [normalized_address, beds, baths, sqft, mapped_type],
+        separators=(",", ":"),
+    )
+
+
+def has_cached_rent_estimate(
+    address: str,
+    beds: float | None = None,
+    baths: float | None = None,
+    sqft: int | None = None,
+    property_type: str | None = None,
+) -> bool:
+    """Return whether this exact AVM can be served without another API call."""
+    if not address:
+        return False
+    return _rent_cache.get(
+        _rent_cache_key(address, beds, baths, sqft, property_type)
+    ) is not None
 
 
 def is_configured() -> bool:
@@ -278,6 +310,11 @@ async def rent_estimate(
     if not address:
         return {"error": "An address is required."}
 
+    cache_key = _rent_cache_key(address, beds, baths, sqft, property_type)
+    cached = _rent_cache.get(cache_key)
+    if cached is not None:
+        return {"data": cached, "cached": True}
+
     params: dict = {"address": address}
     if beds is not None:
         params["bedrooms"] = beds
@@ -294,15 +331,15 @@ async def rent_estimate(
     if not data:
         return result
 
-    return {
-        "data": {
-            "rent": data.get("rent"),
-            "rent_low": data.get("rentRangeLow"),
-            "rent_high": data.get("rentRangeHigh"),
-            "comparables": (data.get("comparables") or [])[:5],
-            "source": "rentcast_avm",
-        }
+    payload = {
+        "rent": data.get("rent"),
+        "rent_low": data.get("rentRangeLow"),
+        "rent_high": data.get("rentRangeHigh"),
+        "comparables": (data.get("comparables") or [])[:5],
+        "source": "rentcast_avm",
     }
+    _rent_cache.set(cache_key, payload)
+    return {"data": payload, "cached": False}
 
 
 # ---------------------------------------------------------------------------

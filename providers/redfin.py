@@ -523,7 +523,10 @@ _REDFIN_RENT_JS = """
         const rent = parseInt(m[1].replace(/,/g, ''));
         if (rent <= 0 || rent > 50000) return;
 
-        let beds = null, baths = null, sqft = null;
+        let beds = null, baths = null, sqft = null, daysOnMarket = null;
+        const cardText = card.textContent || '';
+        const domM = cardText.match(/(\\d+)\\s+days?\\s+(?:on\\s+Redfin|listed|on\\s+(?:the\\s+)?market)/i);
+        if (domM) daysOnMarket = parseInt(domM[1]);
         // Try multiple stat selectors
         const statsEls = card.querySelectorAll('.bp-Homecard__Stats, [class*="HomeStats"], [class*="homeStat"], [class*="KeyStats"]');
         for (const el of statsEls) {
@@ -552,7 +555,7 @@ _REDFIN_RENT_JS = """
         const key = addr || rent.toString();
         if (seen.has(key)) return;
         seen.add(key);
-        results.push({ rent: rent, beds: beds, baths: baths, sqft: sqft, address: addr });
+        results.push({ rent: rent, beds: beds, baths: baths, sqft: sqft, address: addr, daysOnMarket: daysOnMarket });
     });
     return results;
 }
@@ -652,6 +655,10 @@ async def _search_redfin_rentals(location: str, beds: int | None = None) -> dict
     median_rent = rents[len(rents) // 2]
     low_rent = rents[int(len(rents) * 0.25)] if len(rents) >= 4 else rents[0]
     high_rent = rents[int(len(rents) * 0.75)] if len(rents) >= 4 else rents[-1]
+    market_days = sorted(
+        r["daysOnMarket"] for r in rentals
+        if r.get("daysOnMarket") is not None and r["daysOnMarket"] > 0
+    )
 
     return {
         "rentals": rentals[:15],
@@ -662,5 +669,8 @@ async def _search_redfin_rentals(location: str, beds: int | None = None) -> dict
             "low": round(low_rent),
             "high": round(high_rent),
             "count": len(rents),
+            "medianDaysOnMarket": (
+                market_days[len(market_days) // 2] if market_days else None
+            ),
         },
     }
