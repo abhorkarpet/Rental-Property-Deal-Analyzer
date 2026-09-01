@@ -307,6 +307,79 @@ def test_smart_finder_hydrates_listing_and_exports_ranked_csv(page, live_server,
     assert all(path in paths for path in ("/api/rent-estimate", "/api/tax-rate", "/api/appreciation"))
 
 
+def test_batch_review_separates_promotional_and_stabilized_returns(page, live_server, tmp_path):
+    batch_deal = {
+        "source_row": 44,
+        "source": "google_sheet",
+        "address": "1626 12th Ave N, Bessemer, AL 35020",
+        "address_quality": "exact",
+        "asset_type": "SFR",
+        "deal_type": "Turnkey Rehab",
+        "brochure_url": "https://docs.google.com/document/d/test/edit",
+        "price": 143000,
+        "claimed_roi_pct": 13,
+        "roi_basis": "seller_claimed_unspecified",
+        "claimed_monthly_cash_flow": 352,
+        "claimed_initial_cash": 36000,
+        "year1_monthly_cash_flow": 352,
+        "stabilized_monthly_cash_flow": 304,
+        "temporary_pm_uplift_monthly": 48,
+        "year1_coc_pct": 11.733,
+        "stabilized_coc_pct": 10.133,
+        "monthly_rent": 1200,
+        "beds": 3,
+        "baths": 2,
+        "sqft": 1168,
+        "year_built": 1944,
+        "confidence": "medium",
+        "warnings": [],
+        "incentives": [
+            {
+                "id": "incentive-1", "type": "cash_back",
+                "label": "$10,000 cash back", "amount": 10000,
+                "choice_group": "seller_funds", "source": "seller",
+            },
+            {
+                "id": "incentive-2", "type": "property_management_discount",
+                "label": "5% PM in Year 1, 9% stabilized", "amount": None,
+                "promotional_rate_pct": 5, "normal_rate_pct": 9,
+                "end_month": 12, "choice_group": None, "source": "brochure",
+            },
+        ],
+    }
+    batch_payload = {"deals": [batch_deal], "count": 1, "sheet_name": "RTR Inventory"}
+    calls = open_app(page, live_server, {"/api/batch-review/import": batch_payload})
+
+    page.locator('[data-mode="smart"]').click()
+    page.get_by_role("tab", name="Import Deal List").click()
+    page.locator("#batchSheetUrl").fill(
+        "https://docs.google.com/spreadsheets/d/test-sheet/edit?gid=1"
+    )
+    page.get_by_role("button", name="Import Deals").click()
+
+    page.locator("#batchResultsBody tr").wait_for()
+    table_text = page.locator("#batchResultsBody").inner_text()
+    assert "11.7%" in table_text
+    assert "10.1%" in table_text
+    assert "removes $48.00/mo PM promo" in table_text
+
+    page.locator(".batch-incentive-select").select_option("incentive-1")
+    assert "Selected cash to close: $26,000.00" in page.locator("#batchResultsBody").inner_text()
+
+    with page.expect_download() as download_info:
+        page.get_by_role("button", name="Export Review CSV").click()
+    export_path = tmp_path / "batch.csv"
+    download_info.value.save_as(export_path)
+    assert "Stabilized CoC" in export_path.read_text(encoding="utf-8")
+
+    page.get_by_role("button", name="Verify & Analyze →").click()
+    page.locator("#step2.active").wait_for()
+    assert page.locator("#management").input_value() == "9"
+    paths = [call["path"] for call in calls]
+    assert "/api/batch-review/import" in paths
+    assert all(path in paths for path in ("/api/rent-estimate", "/api/tax-rate", "/api/appreciation"))
+
+
 def test_scenarios_compare_and_mobile_print_layout(page, live_server):
     open_app(page, live_server)
     page.evaluate("tryExampleDeal()")

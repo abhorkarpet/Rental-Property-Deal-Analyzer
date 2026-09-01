@@ -39,6 +39,7 @@ Free, open-source rental property investment calculator with AI-powered analysis
 - **What-If mode** — sliders for 23 modelled underwriting assumptions, grouped and collapsible, with cash flow, pre-tax profit, IRR, a 30-year chart and a full annual projection moving live as you drag
 - **Visible version number** — shown on the page so you always know which build you are looking at
 - **Neighborhood Search** — search a zip code or city, score listings by investor metrics, then analyze the best ones
+- **Batch Review** — import seller inventories from CSV or public Google Sheets, augment linked brochures, and compare promotional versus stabilized returns
 - **Sensitivity analysis** — what-if tables for interest rate, vacancy, rent, purchase price, and appreciation
 - **Rent estimation** — a property-specific RentCast estimate with a low/high range, or scraped Redfin rental comps without a key
 - **Locally-sourced assumptions** — property tax rate, vacancy, appreciation and repair reserves derived from the property's own ZIP, state, age and size instead of national guesses
@@ -159,7 +160,8 @@ do not match, so every release change must include a version bump.
 
 ## How It Works
 
-The app has three ways to start an analysis, selected on the first step:
+The app has three main ways to start an analysis, selected on the first step.
+Smart Deal Finder also contains a separate Batch Review entry for inventories:
 
 ### Single Property (default)
 
@@ -184,6 +186,43 @@ Fully automated deal discovery — enter a location and the app will:
 3. Search for-sale listings under that cap
 4. Score each listing with a [6-star Quick Score](#quick-score-6-stars) using estimated rent
 5. Show all results ranked by deal quality
+
+### Batch Review
+
+Open **Smart Deal Finder → Import Deal List** to screen a seller inventory
+without treating its marketing figures as verified calculations.
+
+1. Paste a public Google Sheet URL or upload a CSV.
+2. The importer maps common headers such as Address, Price, ROI, Cash Flow,
+   Initial Cash, Beds, Baths, Year Built, and Seller Incentives.
+3. Google Sheet imports retain native hyperlinks hidden behind cells such as
+   `Brochure`. The sheet must be shared as anyone-with-link viewer; private
+   OAuth access is not required or requested.
+4. Optionally augment linked public Google Docs. Extracted rent, square footage,
+   property details, rental status, and incentive terms remain visibly sourced
+   to the brochure.
+5. Review seller ROI beside a consistently calculated Year-1 cash-on-cash and
+   stabilized cash-on-cash screen. Temporary management discounts expire after
+   their stated term; tax estimates never enter the core result.
+6. Select among mutually exclusive seller-fund choices where an amount can be
+   allocated as cash back, a closing credit, or another option. Rate buy-downs
+   remain pending until their full rate schedule is entered in the analyzer.
+7. Click **Verify & Analyze** to send a deal through the same automatic local
+   rent, property-tax, insurance, vacancy, maintenance, CapEx, appreciation,
+   and financing workflow used by the other entry paths.
+
+The batch table intentionally distinguishes these return bases:
+
+| Return | Meaning |
+|---|---|
+| Seller ROI | Imported claim; horizon may be first-year, ten-year, or unspecified |
+| Year-1 CoC | Claimed recurring cash flow divided by stated initial cash |
+| Stabilized CoC | Year-1 CoC after expiring operating incentives are removed |
+| Full Analysis | Independently hydrated, editable underwriting and hold-period IRR |
+
+For reliable property-level verification, provide an exact street address.
+City/ZIP-only inventory can still be pre-screened, but remains marked
+`market-only` until the address is supplied.
 
 ### Results: What-If
 

@@ -103,7 +103,8 @@
   var SOURCE_LABELS = {
     zillow: 'Zillow', redfin: 'Redfin', rentcast_avm: 'RentCast',
     rentcast_market: 'RentCast area', pdf: 'PDF', pdf_ai: 'PDF (AI)',
-    screenshot_ai: 'Screenshot (AI)', estimated: 'Estimated', fhfa: 'FHFA'
+    screenshot_ai: 'Screenshot (AI)', estimated: 'Estimated', fhfa: 'FHFA',
+    seller_sheet: 'Seller sheet', brochure: 'Brochure'
   };
 
   function markSource(field, source) {
@@ -1044,6 +1045,19 @@
   var smartAnalyzeActive = false;
   var smartSortCol = 'score';
   var smartSortAsc = false;
+  var batchResults = [];
+  var batchSortCol = 'stabilized_coc_pct';
+  var batchSortAsc = false;
+
+  window.showSmartEntry = function(entry) {
+    var batch = entry === 'batch';
+    $('smartDiscoverPanel').style.display = batch ? 'none' : '';
+    $('smartBatchPanel').style.display = batch ? '' : 'none';
+    $('smartDiscoverTab').classList.toggle('active', !batch);
+    $('smartBatchTab').classList.toggle('active', batch);
+    $('smartDiscoverTab').setAttribute('aria-selected', batch ? 'false' : 'true');
+    $('smartBatchTab').setAttribute('aria-selected', batch ? 'true' : 'false');
+  };
 
   window.runSmartSearch = async function(allowOverage) {
     if (window.__CLOUD_DEMO__) { showSmartStatus('Smart Deal Finder is only available when running locally. Clone the repo and run python app.py.', true); return; }
@@ -1222,6 +1236,326 @@
       source: 'redfin',
       estimatedRent: listing && (listing._estRent || listing.estRent)
     });
+  };
+
+  // ======================================================================
+  // Batch Inventory Review
+  // ======================================================================
+  function showBatchStatus(message, isError) {
+    var el = $('batchStatus');
+    el.textContent = message;
+    el.className = 'search-status' + (isError ? ' error' : '');
+    el.style.display = '';
+  }
+
+  function readTextFile(file) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function() { resolve(String(reader.result || '')); };
+      reader.onerror = function() { reject(new Error('Could not read the selected CSV.')); };
+      reader.readAsText(file);
+    });
+  }
+
+  window.importBatchDeals = async function() {
+    var sheetUrl = $('batchSheetUrl').value.trim();
+    var file = $('batchCsvFile').files[0];
+    if ((!sheetUrl && !file) || (sheetUrl && file)) {
+      showBatchStatus('Provide one public Google Sheet URL or one CSV file.', true);
+      return;
+    }
+    $('batchImportBtn').disabled = true;
+    $('batchImportBtnText').innerHTML = '<span class="spinner"></span> Importing...';
+    $('batchResultsContainer').style.display = 'none';
+    showBatchStatus(
+      $('batchAugmentBrochures').checked
+        ? 'Importing inventory and reading linked public brochures...'
+        : 'Importing and normalizing seller inventory...',
+      false
+    );
+    try {
+      var body = {
+        sheet_url: sheetUrl || null,
+        csv_text: file ? await readTextFile(file) : null,
+        augment_brochures: $('batchAugmentBrochures').checked
+      };
+      var response = await fetch('/api/batch-review/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      var data = await response.json();
+      if (!response.ok || data.error) {
+        showBatchStatus(data.error || 'Could not import this inventory.', true);
+        return;
+      }
+      batchResults = data.deals || [];
+      batchSortCol = 'stabilized_coc_pct';
+      batchSortAsc = false;
+      sortAndRenderBatch();
+      $('batchResultsTitle').textContent = batchResults.length + ' imported deals'
+        + (data.sheet_name ? ' — ' + data.sheet_name : '');
+      $('batchResultsContainer').style.display = '';
+      showBatchStatus(
+        'Imported ' + batchResults.length + ' deals'
+        + (data.augmented_count ? ' and augmented ' + data.augmented_count + ' brochures' : '')
+        + '. Seller claims remain separate from calculated screens.',
+        false
+      );
+    } catch (error) {
+      showBatchStatus(error.message || 'Could not connect to the server.', true);
+    } finally {
+      $('batchImportBtn').disabled = false;
+      $('batchImportBtnText').textContent = 'Import Deals';
+    }
+  };
+
+  window.augmentBatchBrochures = async function() {
+    if (!batchResults.length) return;
+    var button = $('batchAugmentBtn');
+    button.disabled = true;
+    button.textContent = 'Reading brochures...';
+    showBatchStatus('Reading linked public Google Docs and extracting time-bound incentives...', false);
+    try {
+      var response = await fetch('/api/batch-review/augment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deals: batchResults })
+      });
+      var data = await response.json();
+      if (!response.ok || data.error) {
+        showBatchStatus(data.error || 'Brochure augmentation failed.', true);
+        return;
+      }
+      batchResults = data.deals || batchResults;
+      sortAndRenderBatch();
+      showBatchStatus(
+        'Augmented ' + (data.augmented_count || 0) + ' brochures'
+        + (data.unavailable_count ? '; ' + data.unavailable_count + ' could not be read' : '') + '.',
+        false
+      );
+    } catch (error) {
+      showBatchStatus('Could not connect to the server.', true);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Augment Brochures';
+    }
+  };
+
+  function nullableNumber(value) {
+    var number = Number(value);
+    return value === null || value === undefined || !isFinite(number) ? null : number;
+  }
+
+  function batchPct(value) {
+    var number = nullableNumber(value);
+    return number === null ? '—' : number.toFixed(1) + '%';
+  }
+
+  function roiBasisLabel(value) {
+    if (value === 'first_year_promotional') return 'First-year promo';
+    if (value === 'ten_year_projection') return '10-year projection';
+    return 'Unspecified claim';
+  }
+
+  function renderBatchSummary() {
+    var exact = batchResults.filter(function(d) { return d.address_quality === 'exact'; }).length;
+    var promotional = batchResults.filter(function(d) { return d.roi_basis === 'first_year_promotional'; }).length;
+    var augmented = batchResults.filter(function(d) { return d.brochure_status === 'augmented'; }).length;
+    var comparable = batchResults.filter(function(d) { return nullableNumber(d.stabilized_coc_pct) !== null; }).length;
+    $('batchSummaryStrip').innerHTML = [
+      ['Deals', batchResults.length],
+      ['Exact addresses', exact],
+      ['Promotional ROI', promotional],
+      ['Comparable screens', comparable + (augmented ? ' · ' + augmented + ' brochures' : '')]
+    ].map(function(item) {
+      return '<div class="batch-summary-item"><div class="label">' + esc(String(item[0]))
+        + '</div><div class="value">' + esc(String(item[1])) + '</div></div>';
+    }).join('');
+  }
+
+  function renderBatchResults() {
+    renderBatchSummary();
+    var html = '';
+    batchResults.forEach(function(deal, index) {
+      var incentives = deal.incentives || [];
+      var sellerChoices = incentives.filter(function(item) {
+        return item.choice_group === 'seller_funds';
+      });
+      var informational = incentives.filter(function(item) {
+        return item.choice_group !== 'seller_funds';
+      });
+      var incentiveHtml = informational.length
+        ? informational.map(function(item) {
+            var cls = item.type === 'tax_estimate' ? ' tax' : '';
+            var suffix = item.end_month ? ' (through month ' + item.end_month + ')' : '';
+            return '<span class="incentive-badge' + cls + '" title="' + esc(item.source || 'seller') + '">'
+              + esc(item.label || item.type) + esc(suffix) + '</span>';
+          }).join('')
+        : '';
+      if (sellerChoices.length) {
+        incentiveHtml = '<select class="batch-incentive-select" aria-label="Selected seller incentive" onchange="selectBatchIncentive('
+          + index + ', this.value)"><option value="">Do not count one-time funds</option>'
+          + sellerChoices.map(function(item) {
+              return '<option value="' + esc(item.id) + '"'
+                + (deal.selected_incentive_id === item.id ? ' selected' : '') + '>'
+                + esc(item.label) + '</option>';
+            }).join('') + '</select>' + incentiveHtml;
+      }
+      if (!incentiveHtml) incentiveHtml = '<span class="batch-deal-meta">None extracted</span>';
+      if (deal.selected_cash_to_close !== null && deal.selected_cash_to_close !== undefined) {
+        incentiveHtml += '<div class="batch-deal-meta">Selected cash to close: '
+          + fmtDollar(deal.selected_cash_to_close) + '</div>';
+        if (deal.selected_year1_coc_pct !== null && deal.selected_year1_coc_pct !== undefined) {
+          incentiveHtml += '<div class="batch-deal-meta">Selected Year-1 CoC: '
+            + batchPct(deal.selected_year1_coc_pct) + '</div>';
+        }
+        if (deal.selected_incentive_note) {
+          incentiveHtml += '<div class="batch-warning">' + esc(deal.selected_incentive_note) + '</div>';
+        }
+      }
+      var basis = roiBasisLabel(deal.roi_basis);
+      var basisClass = deal.roi_basis === 'first_year_promotional' ? '' : ' stable';
+      var warnings = (deal.warnings || []).slice(0, 2);
+      var brochureLink = deal.brochure_url
+        ? '<a href="' + esc(deal.brochure_url) + '" target="_blank" rel="noopener">Brochure</a>'
+        : '';
+      var meta = [deal.deal_type, deal.asset_type, brochureLink].filter(Boolean).join(' · ');
+      var gap = nullableNumber(deal.claimed_roi_pct) !== null && nullableNumber(deal.stabilized_coc_pct) !== null
+        ? deal.claimed_roi_pct - deal.stabilized_coc_pct : null;
+      html += '<tr>'
+        + '<td><div class="batch-deal-name">' + esc(deal.address || '—') + '</div>'
+        + (meta ? '<div class="batch-deal-meta">' + meta + '</div>' : '')
+        + (warnings.length ? '<div class="batch-warning">' + esc(warnings.join(' ')) + '</div>' : '') + '</td>'
+        + '<td>' + (deal.price ? fmtDollar(deal.price) : '—') + '</td>'
+        + '<td><strong>' + batchPct(deal.claimed_roi_pct) + '</strong>'
+        + (gap !== null && gap > 10 ? '<div class="batch-pct-gap">+' + gap.toFixed(1) + ' pts vs stabilized</div>' : '') + '</td>'
+        + '<td><span class="basis-badge' + basisClass + '">' + esc(basis) + '</span></td>'
+        + '<td>' + batchPct(deal.year1_coc_pct)
+        + (deal.year1_monthly_cash_flow !== null && deal.year1_monthly_cash_flow !== undefined
+          ? '<div class="batch-deal-meta">' + fmtDollar(deal.year1_monthly_cash_flow) + '/mo claimed</div>' : '') + '</td>'
+        + '<td><strong>' + batchPct(deal.stabilized_coc_pct) + '</strong>'
+        + (deal.temporary_pm_uplift_monthly
+          ? '<div class="batch-deal-meta">removes ' + fmtDollar(deal.temporary_pm_uplift_monthly) + '/mo PM promo</div>' : '') + '</td>'
+        + '<td>' + incentiveHtml + '</td>'
+        + '<td><span class="confidence-badge ' + esc(deal.confidence || 'low') + '">' + esc(deal.confidence || 'low') + '</span>'
+        + '<div class="batch-deal-meta">' + (deal.address_quality === 'exact' ? 'property-ready' : 'market-only') + '</div></td>'
+        + '<td><button class="btn" type="button" onclick="analyzeFromBatch(' + index + ')">Verify &amp; Analyze &rarr;</button></td>'
+        + '</tr>';
+    });
+    if (!html) html = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-muted);">No priced deals were found.</td></tr>';
+    $('batchResultsBody').innerHTML = html;
+  }
+
+  window.selectBatchIncentive = function(index, incentiveId) {
+    var deal = batchResults[index];
+    if (!deal) return;
+    deal.selected_incentive_id = incentiveId || null;
+    deal.selected_cash_to_close = deal.claimed_initial_cash;
+    deal.selected_year1_coc_pct = deal.year1_coc_pct;
+    deal.selected_incentive_note = null;
+    var selected = (deal.incentives || []).find(function(item) { return item.id === incentiveId; });
+    if (selected && selected.amount && ['cash_back', 'closing_credit', 'unallocated_seller_funds'].indexOf(selected.type) >= 0) {
+      deal.selected_cash_to_close = Math.max(0, deal.claimed_initial_cash - selected.amount);
+      deal.selected_year1_coc_pct = deal.selected_cash_to_close > 0
+        ? deal.year1_monthly_cash_flow * 12 / deal.selected_cash_to_close * 100 : null;
+    } else if (selected && selected.type === 'rate_buydown') {
+      deal.selected_incentive_note = 'Rate schedule required in Full Analysis';
+    }
+    renderBatchResults();
+  };
+
+  function sortAndRenderBatch() {
+    batchResults.sort(function(a, b) {
+      var va = a[batchSortCol];
+      var vb = b[batchSortCol];
+      if (batchSortCol === 'address') {
+        va = String(va || '').toLowerCase();
+        vb = String(vb || '').toLowerCase();
+      } else {
+        va = nullableNumber(va);
+        vb = nullableNumber(vb);
+        if (va === null) va = batchSortAsc ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+        if (vb === null) vb = batchSortAsc ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+      }
+      if (va < vb) return batchSortAsc ? -1 : 1;
+      if (va > vb) return batchSortAsc ? 1 : -1;
+      return 0;
+    });
+    renderBatchResults();
+  }
+
+  window.sortBatchResults = function(column) {
+    if (batchSortCol === column) batchSortAsc = !batchSortAsc;
+    else {
+      batchSortCol = column;
+      batchSortAsc = column === 'address';
+    }
+    document.querySelectorAll('#batchResultsTable th.sortable').forEach(function(th) {
+      var active = th.dataset.col === column;
+      th.classList.toggle('sort-active', active);
+      th.classList.toggle('sort-asc', active && batchSortAsc);
+      th.classList.toggle('sort-desc', active && !batchSortAsc);
+    });
+    sortAndRenderBatch();
+  };
+
+  window.analyzeFromBatch = async function(index) {
+    var deal = batchResults[index];
+    if (!deal) return;
+    var listing = {
+      address: deal.address,
+      price: deal.price,
+      beds: deal.beds,
+      baths: deal.baths,
+      sqft: deal.sqft,
+      yearBuilt: deal.year_built,
+      propertyType: deal.asset_type,
+      estRent: deal.monthly_rent,
+      rentSource: deal.monthly_rent ? 'brochure' : null,
+      source: 'seller_sheet'
+    };
+    await analyzeListing(listing, { source: 'seller_sheet', estimatedRent: deal.monthly_rent });
+    var pm = (deal.incentives || []).find(function(item) {
+      return item.type === 'property_management_discount' && item.normal_rate_pct !== null;
+    });
+    if (pm && !userEditedFields.management) {
+      $('management').value = pm.normal_rate_pct;
+      markSource('management', pm.source === 'brochure' ? 'brochure' : 'estimated');
+    }
+    calculate();
+  };
+
+  window.exportBatchCSV = function() {
+    if (!batchResults.length) return;
+    var rows = [[
+      'Address', 'Price', 'Seller ROI', 'ROI Basis', 'Claimed Monthly Cash Flow',
+      'Initial Cash', 'Year-1 CoC', 'Stabilized Monthly Cash Flow',
+      'Stabilized CoC', 'Address Quality', 'Confidence', 'Incentives', 'Warnings',
+      'Brochure URL'
+    ]];
+    batchResults.forEach(function(deal) {
+      rows.push([
+        deal.address, deal.price, deal.claimed_roi_pct, deal.roi_basis,
+        deal.claimed_monthly_cash_flow, deal.claimed_initial_cash,
+        deal.year1_coc_pct, deal.stabilized_monthly_cash_flow,
+        deal.stabilized_coc_pct, deal.address_quality, deal.confidence,
+        (deal.incentives || []).map(function(item) { return item.label; }).join('; '),
+        (deal.warnings || []).join('; '), deal.brochure_url || ''
+      ]);
+    });
+    var csv = rows.map(function(row) {
+      return row.map(function(value) {
+        var string = value === null || value === undefined ? '' : String(value);
+        return '"' + string.replace(/"/g, '""') + '"';
+      }).join(',');
+    }).join('\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'batch-deal-review.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   // ======================================================================

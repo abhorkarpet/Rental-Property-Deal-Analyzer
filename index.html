@@ -26,7 +26,7 @@
   <header>
     <h1>Rental Property Deal Analyzer</h1>
     <p>Real-time investment metrics &amp; AI-powered analysis</p>
-    <div class="app-version" id="appVersion">v2.3.5</div>
+  <div class="app-version" id="appVersion">v3.0.0</div>
   </header>
 
   <!-- Wizard Navigation -->
@@ -327,6 +327,12 @@
     <!-- ===== Smart Deal Finder Mode ===== -->
     <div id="smartMode" style="display:none">
       <div class="section-title">Smart Deal Finder</div>
+      <div class="smart-entry-toggle" role="tablist" aria-label="Smart Deal Finder entry point">
+        <button class="active" id="smartDiscoverTab" type="button" role="tab" aria-selected="true" onclick="showSmartEntry('discover')">Discover Listings</button>
+        <button id="smartBatchTab" type="button" role="tab" aria-selected="false" onclick="showSmartEntry('batch')">Import Deal List</button>
+      </div>
+
+      <div id="smartDiscoverPanel">
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Enter a location and we'll automatically look up market rents, then find properties where the numbers actually work.</p>
 
       <div class="search-filters">
@@ -399,6 +405,63 @@
             </thead>
             <tbody id="smartResultsBody"></tbody>
           </table>
+        </div>
+      </div>
+      </div>
+
+      <div id="smartBatchPanel" style="display:none;">
+        <p class="batch-intro">Import a seller inventory, preserve its claims, and compare first-year promotional returns with stabilized performance. CSV files and public Google Sheets are supported.</p>
+
+        <div class="batch-import-card">
+          <div class="input-grid batch-import-grid">
+            <div class="input-group">
+              <label for="batchSheetUrl">Public Google Sheet URL</label>
+              <input type="url" id="batchSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…">
+            </div>
+            <div class="input-group">
+              <label for="batchCsvFile">Or upload CSV</label>
+              <input type="file" id="batchCsvFile" accept=".csv,text/csv">
+            </div>
+          </div>
+          <label class="batch-check"><input type="checkbox" id="batchAugmentBrochures"> Augment public Google Docs brochures during import</label>
+          <div class="batch-import-actions">
+            <button class="btn btn-large" id="batchImportBtn" type="button" onclick="importBatchDeals()"><span id="batchImportBtnText">Import Deals</span></button>
+            <span class="usage-note">Brochure values remain seller claims until independently verified.</span>
+          </div>
+        </div>
+
+        <div id="batchStatus" class="search-status" style="display:none;"></div>
+
+        <div id="batchResultsContainer" style="display:none;margin-top:20px;">
+          <div class="batch-summary-strip" id="batchSummaryStrip"></div>
+          <div class="batch-toolbar">
+            <div>
+              <div class="section-title batch-results-title" id="batchResultsTitle">Imported deals</div>
+              <div class="usage-note" style="display:block;">Default ranking uses stabilized cash-on-cash. Tax estimates and one-time incentives never enter the core rank.</div>
+            </div>
+            <div class="search-toolbar">
+              <button class="btn btn-small btn-secondary" id="batchAugmentBtn" type="button" onclick="augmentBatchBrochures()">Augment Brochures</button>
+              <button class="btn btn-small btn-secondary" type="button" onclick="exportBatchCSV()">Export Review CSV</button>
+            </div>
+          </div>
+          <div class="batch-table-wrap">
+            <table class="search-results-table batch-results-table" id="batchResultsTable">
+              <thead>
+                <tr>
+                  <th onclick="sortBatchResults('address')" class="sortable" data-col="address">Deal</th>
+                  <th onclick="sortBatchResults('price')" class="sortable" data-col="price">Price</th>
+                  <th onclick="sortBatchResults('claimed_roi_pct')" class="sortable" data-col="claimed_roi_pct">Seller ROI</th>
+                  <th>ROI basis</th>
+                  <th onclick="sortBatchResults('year1_coc_pct')" class="sortable" data-col="year1_coc_pct">Year-1 CoC</th>
+                  <th onclick="sortBatchResults('stabilized_coc_pct')" class="sortable" data-col="stabilized_coc_pct">Stabilized CoC</th>
+                  <th>Incentives</th>
+                  <th>Confidence</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="batchResultsBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

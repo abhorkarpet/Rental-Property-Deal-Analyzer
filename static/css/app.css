@@ -246,6 +246,131 @@
   }
   .search-status.error { color: var(--red); }
 
+  /* Smart Deal Finder sub-entry: discovery stays simple while batch
+     inventory review gets its own workspace. */
+  .smart-entry-toggle {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    margin: 0 0 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+  }
+  .smart-entry-toggle button {
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .smart-entry-toggle button.active { background: var(--accent); color: #fff; }
+  .batch-intro { color: var(--text-muted); font-size: 0.88rem; margin: 0 0 16px; }
+  .batch-import-card {
+    padding: 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .batch-import-grid { margin-bottom: 12px; }
+  .batch-import-card input[type="file"] {
+    min-height: 42px;
+    padding: 8px;
+    color: var(--text-muted);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .batch-check {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .batch-check input { accent-color: var(--accent); }
+  .batch-import-actions {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .batch-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .batch-summary-item {
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .batch-summary-item .label {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .batch-summary-item .value { margin-top: 3px; font-size: 1.05rem; font-weight: 700; }
+  .batch-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: flex-end;
+    margin-bottom: 12px;
+  }
+  .batch-results-title { margin: 0; padding: 0; border: 0; }
+  .batch-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .batch-results-table { min-width: 1120px; }
+  .batch-results-table td { vertical-align: top; }
+  .batch-deal-name { min-width: 210px; font-weight: 600; }
+  .batch-deal-meta, .batch-warning {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    line-height: 1.35;
+  }
+  .batch-warning { color: var(--yellow); }
+  .basis-badge, .confidence-badge, .incentive-badge {
+    display: inline-block;
+    padding: 3px 7px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .basis-badge { background: rgba(245,158,11,0.12); color: var(--yellow); }
+  .basis-badge.stable { background: rgba(99,102,241,0.12); color: var(--accent); }
+  .confidence-badge.high { background: var(--green-bg); color: var(--green); }
+  .confidence-badge.medium { background: rgba(245,158,11,0.12); color: var(--yellow); }
+  .confidence-badge.low { background: var(--red-bg); color: var(--red); }
+  .incentive-badge { margin: 0 4px 4px 0; background: rgba(99,102,241,0.12); color: var(--accent); }
+  .incentive-badge.tax { background: rgba(139,143,163,0.13); color: var(--text-muted); }
+  .batch-incentive-select {
+    display: block;
+    max-width: 220px;
+    margin-bottom: 5px;
+    padding: 5px 7px;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 0.72rem;
+  }
+  .batch-pct-gap { color: var(--yellow); font-size: 0.7rem; margin-top: 3px; }
+  @media (max-width: 700px) {
+    .batch-summary-strip { grid-template-columns: 1fr 1fr; }
+    .batch-toolbar { align-items: stretch; flex-direction: column; }
+  }
+
   /* Search Results Table */
   .search-results-table {
     width: 100%;

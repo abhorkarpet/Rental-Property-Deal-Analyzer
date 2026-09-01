@@ -26,7 +26,13 @@ from providers.redfin import (
     _extract_redfin,
     _search_redfin_rentals,
 )
-from schemas import NeighborhoodSearchRequest, SmartSearchRequest
+from schemas import (
+    BatchAugmentRequest,
+    BatchImportRequest,
+    NeighborhoodSearchRequest,
+    SmartSearchRequest,
+)
+from services import batch_review
 from services import search as search_service
 
 load_dotenv()
@@ -51,8 +57,10 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # rent data before buying a new RentCast result.
 # 2.3.4 formats dollar inputs consistently without changing calculation values.
 # 2.3.5 fills missing Redfin vacancy from cached RentCast ZIP market data.
+# 3.0.0 adds batch inventory review with Google Sheet/CSV imports, linked
+# brochure augmentation, and time-aware incentive/stabilized return screens.
 # Bump this and the served page follows automatically.
-APP_VERSION = "2.3.5"
+APP_VERSION = "3.0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +174,39 @@ async def smart_search(request: Request, payload: SmartSearchRequest):
         )
     except search_service.SearchError as exc:
         return JSONResponse({"error": exc.message}, status_code=exc.status_code)
+    return JSONResponse(result)
+
+
+@app.post("/api/batch-review/import")
+async def import_batch_review(payload: BatchImportRequest):
+    """Import seller inventory without treating its claims as verified data."""
+    if bool(payload.csv_text) == bool(payload.sheet_url):
+        return JSONResponse(
+            {"error": "Provide either CSV content or one Google Sheet URL."},
+            status_code=400,
+        )
+    try:
+        if payload.sheet_url:
+            result = await batch_review.fetch_google_sheet(payload.sheet_url)
+        else:
+            result = batch_review.parse_csv_text(payload.csv_text or "")
+        if payload.augment_brochures and result.get("deals"):
+            augmented = await batch_review.augment_brochures(result["deals"])
+            result["deals"] = augmented["deals"]
+            result["augmented_count"] = augmented["augmented_count"]
+            result["unavailable_count"] = augmented["unavailable_count"]
+        result["count"] = len(result.get("deals") or [])
+        return JSONResponse(result)
+    except batch_review.BatchReviewError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.post("/api/batch-review/augment")
+async def augment_batch_review(payload: BatchAugmentRequest):
+    """Augment imported deals from linked public Google Docs brochures."""
+    if not payload.deals:
+        return JSONResponse({"error": "No imported deals were provided."}, status_code=400)
+    result = await batch_review.augment_brochures(payload.deals)
     return JSONResponse(result)
 
 

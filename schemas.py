@@ -20,3 +20,13 @@ class SmartSearchRequest(BaseModel):
     property_type: str | None = Field(default=None, max_length=50)
     max_results: int = Field(default=50, ge=1, le=75)
     allow_overage: bool = False
+
+
+class BatchImportRequest(BaseModel):
+    csv_text: str | None = Field(default=None, max_length=10_500_000)
+    sheet_url: str | None = Field(default=None, max_length=500)
+    augment_brochures: bool = False
+
+
+class BatchAugmentRequest(BaseModel):
+    deals: list[dict] = Field(default_factory=list, max_length=200)
