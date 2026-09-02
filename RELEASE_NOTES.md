@@ -1,5 +1,32 @@
 # Release Notes
 
+## v3.1.1 — September 1, 2026
+
+- Fixed **Verify & Analyze** unexpectedly advancing Batch Review deals directly
+  to Loan. Verified deals now land on the populated Property page so the user
+  can inspect the address, price, listing facts, and automatic assumptions
+  before continuing.
+- Kept **Back to Batch Review** visible on that Property page, preserving the
+  imported inventory and its scroll position.
+
+## v3.1.0 — September 1, 2026
+
+- Reorganized the app around three persistent workspaces: **Analyze Property**,
+  **Find Deals**, and **Batch Review**. Batch inventory is no longer hidden
+  under Smart Deal Finder.
+- Kept the six-step wizard local to a property analysis, while Neighborhood
+  Search and Smart Deal Finder now share a focused Find Deals sub-navigation.
+- Added URL-backed navigation so browser Back and Forward move between
+  workspaces, analysis steps, and Summary / What-If / Full Details views.
+- Added origin-aware analysis controls. A deal opened from Neighborhood Search,
+  Smart Deal Finder, or Batch Review can return to that exact workspace without
+  discarding its imported or discovered results.
+- Added an explicit **Analyze Another** action that clears the current property
+  and automatic estimates while keeping batch/search results and investor-level
+  assumptions.
+- Made the primary workspace navigation sticky and responsive so Batch Review
+  and Find Deals remain reachable from Results and on smaller screens.
+
 ## v3.0.11 — August 31, 2026
 
 - Fixed Redfin rent estimates that could accidentally use unrelated

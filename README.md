@@ -172,7 +172,18 @@ do not match, so every release change must include a version bump.
 
 ## How It Works
 
-The app has three main ways to start an analysis, selected on the first step.
+The app has three persistent top-level workspaces:
+
+- **Analyze Property** — the six-step underwriting wizard for one property.
+- **Find Deals** — Neighborhood Search and Smart Deal Finder in one discovery
+  workspace.
+- **Batch Review** — CSV and public Google Sheet inventory import, brochure
+  augmentation, ZIP screening, and row-level Verify & Analyze.
+
+The current workspace and analysis/result view are stored in the URL hash, so
+browser Back and Forward work without clearing imported deals or search results.
+When a property analysis starts from Find Deals or Batch Review, the analysis
+header provides a direct return to its source.
 Smart Deal Finder also contains a separate Batch Review entry for inventories:
 
 ### Single Property (default)

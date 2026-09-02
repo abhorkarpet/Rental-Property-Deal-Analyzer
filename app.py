@@ -74,8 +74,10 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # 3.0.9 clarifies that expense growth applies only to fixed non-tax expenses.
 # 3.0.10 retains leased brochure rent while showing RentCast as a comparison.
 # 3.0.11 validates Redfin rental cards and separates stated from verified rent.
+# 3.1.0 separates Analyze, Find, and Batch into persistent routed workspaces.
+# 3.1.1 keeps Batch verification on the populated Property page for review.
 # Bump this and the served page follows automatically.
-APP_VERSION = "3.0.11"
+APP_VERSION = "3.1.1"
 
 
 # ---------------------------------------------------------------------------

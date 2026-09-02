@@ -201,9 +201,9 @@ def page(browser):
 def open_app(page, live_server, overrides=None):
     calls = install_api_mocks(page, overrides)
     page.goto(live_server, wait_until="load")
-    page.locator("#modeToggle").wait_for()
+    page.locator("#workspaceNav").wait_for()
     assert page.evaluate(
-        "typeof window.DealEngine === 'object' && typeof window.tryExampleDeal === 'function'"
+        "typeof window.DealEngine === 'object' && typeof window.tryExampleDeal === 'function' && typeof window.AppNavigation === 'object'"
     )
     return calls
 
@@ -262,11 +262,38 @@ def test_single_property_results_whatif_ai_and_report_export(page, live_server, 
     assert report.select_one('[data-results-panel="details"]')
     assert not report.select_one('[data-results-panel="whatif"]')
     assert not report.select_one(".results-view-tabs")
+    assert not report.select_one(".workspace-nav")
+
+
+def test_workspace_routes_preserve_state_and_support_browser_history(page, live_server):
+    open_app(page, live_server)
+    assert page.url.endswith("#analyze/property")
+    assert page.locator('#workspaceNav [data-workspace="analyze"]').get_attribute("aria-current") == "page"
+
+    page.get_by_role("button", name="Find Deals Search and screen listings").click()
+    page.locator("#searchLocation").fill("78701")
+    assert page.url.endswith("#find/neighborhood")
+
+    page.get_by_role("button", name="Batch Review Import and compare inventory").click()
+    assert page.url.endswith("#batch")
+    page.go_back()
+    page.locator("#searchMode").wait_for(state="visible")
+    assert page.locator("#searchLocation").input_value() == "78701"
+
+    page.go_forward()
+    page.locator("#smartBatchPanel").wait_for(state="visible")
+    assert page.url.endswith("#batch")
+
+    page.get_by_role("button", name="Analyze Property One property, full underwriting").click()
+    assert page.locator("#wizardNav").is_visible()
+    assert page.locator("#modeToggle").is_hidden()
 
 
 def test_neighborhood_search_hydrates_every_automatic_assumption(page, live_server):
     calls = open_app(page, live_server)
-    page.locator('[data-mode="search"]').click()
+    page.get_by_role("button", name="Find Deals Search and screen listings").click()
+    assert page.locator("#wizardNav").is_hidden()
+    assert page.locator("#modeToggle").is_visible()
     page.locator("#searchLocation").fill("78701")
     page.get_by_role("button", name="Search Listings").click()
 
@@ -298,9 +325,10 @@ def test_neighborhood_search_hydrates_every_automatic_assumption(page, live_serv
 
 def test_smart_finder_hydrates_listing_and_exports_ranked_csv(page, live_server, tmp_path):
     calls = open_app(page, live_server)
-    page.locator('[data-mode="smart"]').click()
+    page.get_by_role("button", name="Find Deals Search and screen listings").click()
+    page.get_by_role("button", name="Smart Deal Finder").click()
     page.locator("#smartLocation").fill("Austin, TX")
-    page.get_by_role("button", name="Find Deals").click()
+    page.get_by_role("button", name="Find Deals", exact=True).click()
 
     page.locator("#smartResultsBody tr").wait_for()
     assert "High" in page.locator("#smartRentDetails").inner_text()
@@ -397,8 +425,9 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
         "/api/batch-review/enrich": market_payload,
     })
 
-    page.locator('[data-mode="smart"]').click()
-    page.get_by_role("tab", name="Import Deal List").click()
+    page.get_by_role("button", name="Batch Review Import and compare inventory").click()
+    assert page.locator("#wizardNav").is_hidden()
+    assert page.locator("#smartModeTitle").inner_text() == "Batch Review"
     page.locator("#batchSheetUrl").fill(
         "https://docs.google.com/spreadsheets/d/test-sheet/edit?gid=1"
     )
@@ -435,10 +464,13 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
     assert action_header.evaluate("el => getComputedStyle(el).position") == "sticky"
     assert action_button.is_visible()
     action_button.click()
-    page.locator("#step2.active").wait_for()
+    page.locator("#step1.active").wait_for()
+    assert page.url.endswith("#analyze/property")
+    page.wait_for_function("document.querySelector('#monthlyRent').value === '$2,350'")
     assert page.locator("#monthlyRent").input_value() == "$2,350"
     assert "$2,350" in page.locator("#rentEstimateStats").inner_text()
     assert page.locator("#management").input_value() == "9"
+    assert page.get_by_role("button", name="Back to Batch Review").is_visible()
     applied_incentives = page.locator("#verifiedIncentiveList").text_content()
     assert "$900.00 one-time rent credit added to Year 1 cash flow" in applied_incentives
     assert "$6,900.00 closing credit applied only to eligible acquisition costs" in applied_incentives
@@ -448,6 +480,10 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
     assert all(path in paths for path in ("/api/rent-estimate", "/api/tax-rate", "/api/appreciation"))
     rent_call = next(call for call in calls if call["path"] == "/api/rent-estimate")
     assert rent_call["json"]["prefer_rentcast"] is True
+    page.get_by_role("button", name="Back to Batch Review").click()
+    page.locator("#batchResultsBody tr").wait_for()
+    assert "1626 12th Ave" in page.locator("#batchResultsBody").inner_text()
+    assert page.url.endswith("#batch")
 
 
 def test_scenarios_compare_and_mobile_print_layout(page, live_server):
@@ -502,7 +538,7 @@ def test_search_failure_is_actionable_and_controls_recover(page, live_server):
         live_server,
         {"/api/search": (503, {"error": "Listing provider temporarily unavailable."})},
     )
-    page.locator('[data-mode="search"]').click()
+    page.get_by_role("button", name="Find Deals Search and screen listings").click()
     page.locator("#searchLocation").fill("78701")
     page.get_by_role("button", name="Search Listings").click()
 

@@ -14,7 +14,8 @@ def test_frontend_and_static_assets_share_the_current_version(client):
     assert f'id="appVersion">v{app_module.APP_VERSION}</div>' in response.text
     assert f'static/css/app.css?v={app_module.APP_VERSION}' in response.text
     assert f'static/js/app.js?v={app_module.APP_VERSION}' in response.text
-    for path in ("/static/css/app.css", "/static/js/deal-engine.js", "/static/js/app.js"):
+    assert f'static/js/navigation.js?v={app_module.APP_VERSION}' in response.text
+    for path in ("/static/css/app.css", "/static/js/deal-engine.js", "/static/js/app.js", "/static/js/navigation.js"):
         assert client.get(path).status_code == 200
 
 

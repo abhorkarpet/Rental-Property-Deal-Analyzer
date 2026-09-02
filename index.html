@@ -26,8 +26,23 @@
   <header>
     <h1>Rental Property Deal Analyzer</h1>
     <p>Real-time investment metrics &amp; AI-powered analysis</p>
-  <div class="app-version" id="appVersion">v3.0.11</div>
+  <div class="app-version" id="appVersion">v3.1.1</div>
   </header>
+
+  <nav class="workspace-nav" id="workspaceNav" aria-label="Main navigation">
+    <button class="active" type="button" data-workspace="analyze" onclick="AppNavigation.navigate('analyze/property')">
+      <span>Analyze Property</span>
+      <small>One property, full underwriting</small>
+    </button>
+    <button type="button" data-workspace="find" onclick="AppNavigation.navigate('find/neighborhood')">
+      <span>Find Deals</span>
+      <small>Search and screen listings</small>
+    </button>
+    <button type="button" data-workspace="batch" onclick="AppNavigation.navigate('batch')">
+      <span>Batch Review</span>
+      <small>Import and compare inventory</small>
+    </button>
+  </nav>
 
   <!-- Wizard Navigation -->
   <div class="wizard-nav" id="wizardNav" role="tablist" aria-label="Analysis steps">
@@ -62,6 +77,15 @@
     </div>
   </div>
 
+  <div class="analysis-context" id="analysisContext" hidden>
+    <button class="btn btn-small btn-secondary" id="analysisOriginBack" type="button" onclick="AppNavigation.backToOrigin()">&larr; Back</button>
+    <span id="analysisContextLabel">Property analysis</span>
+    <div class="analysis-context-actions">
+      <button class="btn btn-small btn-secondary" type="button" onclick="AppNavigation.editAnalysis()">Edit Property</button>
+      <button class="btn btn-small" type="button" onclick="AppNavigation.startAnother()">Analyze Another</button>
+    </div>
+  </div>
+
   <!-- Scenario Save/Load Toolbar -->
   <div class="scenario-toolbar" id="scenarioToolbar">
     <select id="scenarioSelect"><option value="">— Saved Scenarios —</option></select>
@@ -85,10 +109,9 @@
   <!-- ============ STEP 1: Property URL & Purchase ============ -->
   <div class="step-panel active" data-step="1" id="step1" role="tabpanel">
 
-    <div class="mode-toggle" id="modeToggle">
-      <button class="active" data-mode="single" onclick="toggleSearchMode('single')">Single Property</button>
-      <button data-mode="search" onclick="toggleSearchMode('search')">Neighborhood Search</button>
-      <button data-mode="smart" onclick="toggleSearchMode('smart')">Smart Deal Finder</button>
+    <div class="mode-toggle find-mode-toggle" id="modeToggle" style="display:none;">
+      <button class="active" data-mode="search" onclick="AppNavigation.navigate('find/neighborhood')">Neighborhood Search</button>
+      <button data-mode="smart" onclick="AppNavigation.navigate('find/smart')">Smart Deal Finder</button>
     </div>
 
     <!-- Cloud demo notice (hidden by default, shown via JS when __CLOUD_DEMO__ is set) -->
@@ -332,8 +355,8 @@
 
     <!-- ===== Smart Deal Finder Mode ===== -->
     <div id="smartMode" style="display:none">
-      <div class="section-title">Smart Deal Finder</div>
-      <div class="smart-entry-toggle" role="tablist" aria-label="Smart Deal Finder entry point">
+      <div class="section-title" id="smartModeTitle">Smart Deal Finder</div>
+      <div class="smart-entry-toggle" id="smartEntryToggle" role="tablist" aria-label="Smart Deal Finder entry point">
         <button class="active" id="smartDiscoverTab" type="button" role="tab" aria-selected="true" onclick="showSmartEntry('discover')">Discover Listings</button>
         <button id="smartBatchTab" type="button" role="tab" aria-selected="false" onclick="showSmartEntry('batch')">Import Deal List</button>
       </div>
@@ -932,5 +955,6 @@
 
 <script src="static/js/deal-engine.js"></script>
 <script src="static/js/app.js"></script>
+<script src="static/js/navigation.js"></script>
 </body>
 </html>

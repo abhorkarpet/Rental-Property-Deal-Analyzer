@@ -95,6 +95,12 @@
   var activeDealIncentives = [];
   var activeSellerClaim = null;
 
+  function emitNavigationChange(type, detail) {
+    document.dispatchEvent(new CustomEvent('app:navigation-change', {
+      detail: Object.assign({ type: type }, detail || {})
+    }));
+  }
+
   // Investment properties are not owner-occupied, so conventional financing
   // typically requires 25% down rather than 20%. Used by the search-grid quick
   // score; the wizard reads the Down Payment field, which defaults to the same.
@@ -251,6 +257,7 @@
       whatifOverrides = {};
       calculate();
     }
+    emitNavigationChange('step', { step: n });
   };
 
   window.wizardClick = function(n) {
@@ -281,6 +288,7 @@
     if (view !== 'summary' && tabs) {
       tabs.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+    emitNavigationChange('resultsView', { view: view });
   };
 
   // ======================================================================
@@ -891,6 +899,10 @@
 
   async function analyzeListing(listing, options) {
     if (!listing) return;
+    options = options || {};
+    if (window.AppNavigation) {
+      window.AppNavigation.setAnalysisOrigin(options.origin || 'analyze');
+    }
     resetLocationDerivedAssumptions();
     toggleSearchMode('single');
     populateListingForm(listing, options);
@@ -903,7 +915,7 @@
 
     await refreshAutomaticAssumptions(options);
     smartAnalyzeActive = false;
-    goToStep(2);
+    goToStep(options.startAtProperty ? 1 : 2);
   }
 
   // ======================================================================
@@ -926,6 +938,38 @@
     document.querySelectorAll('#modeToggle button').forEach(function(b) {
       b.classList.toggle('active', b.dataset.mode === mode);
     });
+    emitNavigationChange('mode', { mode: mode });
+  };
+
+  window.resetAnalysisForNewProperty = function() {
+    resetLocationDerivedAssumptions();
+    window.scrapedData = null;
+    pendingUpload = null;
+    ['zillowUrl', 'propName', 'purchasePrice', 'arv', 'rehabBudget', 'sqft', 'yearBuilt'].forEach(function(id) {
+      var input = $(id);
+      if (input) input.value = '';
+    });
+    ['purchasePrice', 'arv', 'rehabBudget', 'sqft', 'yearBuilt', 'closingCosts'].forEach(function(field) {
+      delete userEditedFields[field];
+      delete autoFilledFields[field];
+      delete fieldSources[field];
+    });
+    var closingCosts = $('closingCosts');
+    if (closingCosts) closingCosts.value = '';
+    var propertyCard = $('propertyCard');
+    if (propertyCard) propertyCard.classList.remove('visible');
+    var uploadConfirm = $('uploadConfirm');
+    if (uploadConfirm) uploadConfirm.style.display = 'none';
+    var uploadStatus = $('uploadStatus');
+    if (uploadStatus) uploadStatus.textContent = '';
+    var urlError = $('urlError');
+    if (urlError) {
+      urlError.textContent = '';
+      urlError.classList.remove('visible');
+    }
+    var rentEstimate = $('rentEstimateSection');
+    if (rentEstimate) rentEstimate.style.display = 'none';
+    formatCurrencyInputs();
   };
 
   window.runNeighborhoodSearch = async function(allowOverage) {
@@ -1083,7 +1127,8 @@
     var listing = searchResults[idx];
     return analyzeListing(listing, {
       source: 'redfin',
-      estimatedRent: listing && listing.estRent
+      estimatedRent: listing && listing.estRent,
+      origin: 'find/neighborhood'
     });
   };
 
@@ -1106,6 +1151,7 @@
     $('smartBatchTab').classList.toggle('active', batch);
     $('smartDiscoverTab').setAttribute('aria-selected', batch ? 'false' : 'true');
     $('smartBatchTab').setAttribute('aria-selected', batch ? 'true' : 'false');
+    emitNavigationChange('smartEntry', { entry: batch ? 'batch' : 'discover' });
   };
 
   window.runSmartSearch = async function(allowOverage) {
@@ -1283,7 +1329,8 @@
     var listing = smartResults[idx];
     return analyzeListing(listing, {
       source: 'redfin',
-      estimatedRent: listing && (listing._estRent || listing.estRent)
+      estimatedRent: listing && (listing._estRent || listing.estRent),
+      origin: 'find/smart'
     });
   };
 
@@ -1717,7 +1764,9 @@
       source: 'seller_sheet',
       estimatedRent: deal.monthly_rent,
       preferRentcast: deal.address_quality === 'exact',
-      preserveSeedRent: hasVerifiedLeaseRent
+      preserveSeedRent: hasVerifiedLeaseRent,
+      startAtProperty: true,
+      origin: 'batch'
     });
     activeDealIncentives = activeBatchIncentives(deal);
     var pm = activeDealIncentives.find(function(item) {
@@ -3487,7 +3536,7 @@
   window.downloadHTML = function() {
     var clone = document.documentElement.cloneNode(true);
     // Remove non-result elements
-    var removeSelectors = ['.wizard-nav','.step-buttons','.url-row','.url-error',
+    var removeSelectors = ['.workspace-nav','.analysis-context','.wizard-nav','.step-buttons','.url-row','.url-error',
       '.property-card','.scenario-toolbar','.compare-overlay','.connection-banner',
       '.results-view-tabs','[data-results-panel="whatif"]',
       '#downloadBtn','#downloadHtmlBtn','.ai-controls select','#aiBtn','script'];

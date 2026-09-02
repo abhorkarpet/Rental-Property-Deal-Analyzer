@@ -38,6 +38,61 @@
   header h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
   header p { color: var(--text-muted); font-size: 0.9rem; }
 
+  /* Primary workspaces stay available throughout the app. The wizard below
+     belongs only to Analyze Property. */
+  .workspace-nav {
+    position: sticky;
+    top: 10px;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 8px;
+    margin: -14px 0 28px;
+    background: rgba(26, 29, 39, 0.96);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(10px);
+  }
+  .workspace-nav button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding: 10px 14px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+  .workspace-nav button:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .workspace-nav button.active {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .workspace-nav button span { font-size: 0.88rem; font-weight: 700; }
+  .workspace-nav button small { font-size: 0.7rem; opacity: 0.78; }
+
+  .analysis-context {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 8px 12px;
+    margin: -18px 0 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .analysis-context[hidden] { display: none !important; }
+  .analysis-context > span { flex: 1; color: var(--text-muted); font-size: 0.82rem; }
+  .analysis-context-actions { display: flex; gap: 8px; }
+
   /* ---- Wizard Navigation ---- */
   .wizard-nav {
     display: flex;
@@ -1340,6 +1395,12 @@
   }
 
   @media (max-width: 600px) {
+    .workspace-nav { grid-template-columns: repeat(3, minmax(112px, 1fr)); overflow-x: auto; top: 6px; }
+    .workspace-nav button { padding: 9px 10px; }
+    .workspace-nav button small { display: none; }
+    .analysis-context { align-items: stretch; flex-wrap: wrap; }
+    .analysis-context > span { order: -1; flex-basis: 100%; }
+    .analysis-context-actions { margin-left: auto; }
     .results-view-tabs { display: flex; width: 100%; }
     .results-view-tabs button { flex: 1; padding: 9px 8px; font-size: 0.78rem; }
     .input-grid { grid-template-columns: 1fr; }
@@ -1451,7 +1512,7 @@
     /* Hide non-result elements */
     .wizard-nav, .step-buttons, .url-row, .url-error, .property-card,
     .btn, .ai-section .btn, #aiBtn, .toggle-row, #downloadBtn, #downloadHtmlBtn,
-    .connection-banner, .scenario-toolbar, .ai-controls select, .compare-overlay,
+    .connection-banner, .scenario-toolbar, .workspace-nav, .analysis-context, .ai-controls select, .compare-overlay,
     .results-view-tabs, .results-view[data-results-panel="whatif"],
     .mode-toggle, #searchMode, .rent-estimate-section, .alert-config, .search-toolbar { display: none !important; }
     .step-panel { display: none !important; }
