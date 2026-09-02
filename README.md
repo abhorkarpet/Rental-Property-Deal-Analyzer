@@ -31,7 +31,7 @@ Free, open-source rental property investment calculator with AI-powered analysis
 
 - **20+ investment metrics** calculated instantly (CoC, Cap Rate, DSCR, NOI, GRM, and more)
 - **AI-powered analysis** — free local models or Claude API
-- **Point-based deal scorecard** — 14-point system with factor-by-factor reasoning
+- **Balanced deal scorecard** — 100-point Income Safety + selected-hold Performance model with factor-by-factor reasoning
 - **Holding-period return breakdown** — Cash Flow + Appreciation + Debt Paydown − Upfront Costs, reported consistently before income tax and after selling costs
 - **Strategy fit analysis** — Cash Flow / Wealth Building / Low Risk / BRRRR
 - **Save, compare, and export** — localStorage scenarios, side-by-side comparison (up to 3), PDF + HTML export
@@ -110,6 +110,16 @@ python app.py
 Opens a browser automatically at **http://localhost:8000**. No build step required.
 Stop it with `Ctrl-C`.
 
+For later restarts, run this from the project directory:
+
+```bash
+./restart_app.sh
+```
+
+The script stops only a port-8000 listener launched from this project, then
+starts the app with `.venv/bin/python`. It refuses to terminate an unrelated
+application that happens to be using the same port.
+
 If you skipped the virtualenv activation, run it explicitly so you get the right
 interpreter:
 
@@ -153,6 +163,8 @@ do not match, so every release change must include a version bump.
 | `LMSTUDIO_MODEL` | _(auto)_ | Model ID from LM Studio |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2:3b` | Any Ollama model name |
+| `BROCHURE_LLM_PARSER` | `fallback` | Use the configured LLM only when deterministic brochure extraction leaves material gaps; set `off` to disable |
+| `BROCHURE_LLM_MODEL` | _(provider default)_ | Optional model override for brochure extraction |
 | `ANTHROPIC_API_KEY` | — | Anthropic provider, and required to read screenshots / printed listing pages |
 | `RENTCAST_API_KEY` | — | Optional. Enables per-listing rent estimates and local tax rates |
 | `RENTCAST_MONTHLY_LIMIT` | `50` | Free-tier request budget. The app asks before spending past ~90% of it |
@@ -170,7 +182,7 @@ A **6-step wizard** for analyzing a specific property:
 1. **Property Info** — Address, price, type, ARV, rehab budget (paste a Zillow/Redfin URL, or upload a listing PDF or screenshot if scraping is blocked)
 2. **Financing** — Down payment, rate, term, points, closing costs (or toggle cash purchase). Click **Current Rate** to auto-fill the latest 30-year fixed mortgage rate from Freddie Mac.
 3. **Income** — Monthly rent (multi-unit support), other income, growth rate. Rent is estimated automatically: a property-specific RentCast AVM with a low/high range when a key is set, otherwise the ZIP's market data or scraped Redfin comps.
-4. **Expenses** — Taxes, insurance, HOA, utilities, percentage-based costs, expense growth. Property tax, insurance, vacancy, maintenance and CapEx all arrive pre-filled from the property's ZIP, state, age and size, each badged with its source and editable. Property-tax growth is projected separately under the displayed state rule; leave the override blank for automatic treatment or enter a fixed annual rate for a known local exception.
+4. **Expenses** — Taxes, insurance, HOA, utilities, percentage-based costs, and fixed-expense growth. Property tax, insurance, vacancy, maintenance and CapEx all arrive pre-filled from the property's ZIP, state, age and size, each badged with its source and editable. Fixed-expense growth applies only to insurance, HOA, utilities, and other fixed expenses; maintenance, vacancy, CapEx, and management already move with rent. Property-tax growth is projected separately under the displayed state rule; leave the override blank for automatic treatment or enter a fixed annual rate for a known local exception.
 5. **Review** — Summary of all inputs before calculating
 6. **Results** — A concise decision summary, with separate **What-If** and **Full Details** views for stress testing and deeper underwriting
 
@@ -200,16 +212,42 @@ without treating its marketing figures as verified calculations.
    OAuth access is not required or requested.
 4. Optionally augment linked public Google Docs. Extracted rent, square footage,
    property details, rental status, and incentive terms remain visibly sourced
-   to the brochure.
+   to the brochure. Deterministic parsing runs first; when material fields or
+   incentive terms remain ambiguous, the configured LLM can supply a cached,
+   evidence-backed fallback without overwriting harder evidence.
 5. Review seller ROI beside a consistently calculated Year-1 cash-on-cash and
    stabilized cash-on-cash screen. Temporary management discounts expire after
    their stated term; tax estimates never enter the core result.
-6. Select among mutually exclusive seller-fund choices where an amount can be
+6. Click **Run ZIP Estimates** to group deals by ZIP and pull a comparable
+   market screen. Free Redfin rental medians are preferred; cached RentCast
+   market and tax data fill missing rent, days-on-market, and local tax inputs.
+   Redfin rent evidence is cached separately for each ZIP, bedroom count, and
+   property type represented in the imported inventory.
+7. Select among mutually exclusive seller-fund choices where an amount can be
    allocated as cash back, a closing credit, or another option. Rate buy-downs
    remain pending until their full rate schedule is entered in the analyzer.
-7. Click **Verify & Analyze** to send a deal through the same automatic local
+8. Click **Verify & Analyze** to send a deal through the same automatic local
    rent, property-tax, insurance, vacancy, maintenance, CapEx, appreciation,
-   and financing workflow used by the other entry paths.
+   and financing workflow used by the other entry paths. An exact-address deal
+   explicitly requests the property-specific RentCast AVM before falling back
+   to free Redfin or cached ZIP data. If a brochure identifies the property as
+   leased, its stated rent remains visible as a seller claim; it becomes the
+   underwriting input only after explicit lease verification. Otherwise the
+   automatic market estimate remains primary. Redfin results are revalidated
+   against the subject bedroom count and reasonable square-footage proximity,
+   so unrelated fallback suggestions cannot enter the rent median.
+   Structured brochure incentives follow the deal: PM promotions apply only for
+   their stated months, rent credits enter Year 1 once, and closing credits
+   offset eligible acquisition costs without reducing the down payment.
+   The full projection displays gross rent, net PM expense, and one-time credits
+   for every year. Year 1 uses the entered rent and operating-expense run rate;
+   growth starts in Year 2. Seller-claimed cash flow remains visible as a
+   comparison but is never substituted for the independently calculated cash
+   flow. The projection's unrealized ROI includes cash flow, appreciation, and
+   debt paydown; use selected-hold profit or IRR for a return after selling costs.
+   Once ZIP estimates are available, Batch Review ranks with the same balanced
+   score used by Full Analysis. The row remains labeled a market-screen estimate
+   until property-level verification replaces ZIP assumptions.
 
 The batch table intentionally distinguishes these return bases:
 
@@ -218,7 +256,30 @@ The batch table intentionally distinguishes these return bases:
 | Seller ROI | Imported claim; horizon may be first-year, ten-year, or unspecified |
 | Year-1 CoC | Claimed recurring cash flow divided by stated initial cash |
 | Stabilized CoC | Year-1 CoC after expiring operating incentives are removed |
+| ZIP market screen | Market rent, monthly cash flow, CoC, cap rate, and DSCR using local ZIP assumptions |
 | Full Analysis | Independently hydrated, editable underwriting and hold-period IRR |
+
+The default Batch Review output columns are:
+
+| Column | Source and meaning |
+|---|---|
+| Deal | Address, property/deal type, brochure link, and data warnings |
+| Price | Seller inventory price |
+| Seller ROI | Imported claim, unchanged |
+| ROI basis | First-year promotion, ten-year projection, or unspecified claim |
+| Year-1 CoC | Claimed monthly cash flow ÷ stated initial cash |
+| Stabilized CoC | Claim after expiring operating incentives such as discounted PM are removed |
+| ZIP Rent | Redfin active rentals or bedroom/size-adjusted RentCast ZIP market data |
+| Market Screen | ZIP-based monthly cash flow, CoC, cap rate, DSCR, tax, vacancy, and reserves |
+| Balanced Score | Same Income Safety + 10-Year Performance model used by Full Analysis; available after ZIP estimates |
+| Incentives | Mutually exclusive seller-fund selection plus non-core tax/PM information |
+| Confidence | Exact-address/property-ready or city/ZIP market-only coverage |
+| Action | Verify & Analyze opens the complete editable property analysis; the column stays pinned on wide tables |
+
+The ZIP screen assumes 25% down, 3% closing costs, a 30-year loan at the current
+rate, stabilized management, and no HOA, utilities, loan points, or unreported
+repairs. Those missing costs remain disclosed and must be completed in Analyze
+Details; the batch screen is a ranking tool, not the final underwriting.
 
 For reliable property-level verification, provide an exact street address.
 City/ZIP-only inventory can still be pre-screened, but remains marked
@@ -240,7 +301,7 @@ wizard groups its steps, so the panel stays a control rather than a wall:
 | **Purchase** | Purchase price, closing costs, rehab budget |
 | **Loan** | Down payment, interest rate, loan term, points |
 | **Income** | Monthly rent, other income, vacancy, rent growth |
-| **Operating expenses** | Property taxes, insurance, maintenance, CapEx reserve, management, HOA, utilities, other expenses, expense growth |
+| **Operating expenses** | Property taxes, insurance, maintenance, CapEx reserve, management, HOA, utilities, other expenses, fixed-expense growth |
 | **Assumptions & exit** | Appreciation, hold period and selling costs |
 
 Purchase, Loan and Income are open by default; the other two are one click away
@@ -322,17 +383,23 @@ assumed depreciation savings or subtract capital-gains, depreciation-related,
 state, passive-activity or other taxpayer-specific income taxes. Property tax
 remains an operating expense.
 
-### Deal Scorecard (14-Point System)
+### Balanced Deal Scorecard (100 Points)
 
-| Metric | 2 pts (Strong) | 1 pt (OK) | 0 pts (Weak) |
-|--------|---------------|-----------|--------------|
-| CoC Return | >= 8% | >= 4% | < 4% |
-| Cap Rate | >= 6% | >= 4% | < 4% |
-| DSCR | >= 1.25 | >= 1.0 | < 1.0 |
-| CF per Unit/mo | >= $200 | >= $100 | < $100 |
-| Break-even Occ. | <= 75% | <= 85% | > 85% |
-| 1% Rule | Pass (2pts) | — | Fail (0pts) |
-| 50% Rule | Pass (2pts) | — | Fail (0pts) |
+| Component | Weight | Factors |
+|---|---:|---|
+| **Income Safety** | 60 | Stabilized CoC (15), cap rate (10), stabilized DSCR (15), stabilized CF/unit (10), break-even occupancy (10) |
+| **Selected-Hold Performance** | 40 | After-sale pre-tax IRR (15), average annual operating CoC over the hold (15), cash-flow-positive years (10) |
+
+The current operating score deliberately remains the majority: projected
+appreciation cannot rescue poor debt coverage. The hold component nevertheless
+recognizes improving rent/cash-flow trajectories and applies selling costs to
+IRR. A deal can therefore read **weak current income, improving long-term
+performance** instead of collapsing both conclusions into one opening-year
+verdict. Seller ROI and estimated income-tax benefits never enter the score.
+
+Batch Review runs this identical engine after ZIP estimates, using local rent,
+tax, vacancy, insurance, reserves, appreciation, and current financing defaults.
+It labels the result as a market-screen estimate until **Verify & Analyze**.
 
 **Verdict:** >= 75% = Great Deal | >= 45% = Borderline | < 45% = Pass
 
@@ -384,7 +451,7 @@ rent and square footage and clicking through.
 | **Property** | $250,000, $2,800/mo rent, 1,600 sqft |
 | **Auto-filled** | 2.5% growth · 3.9% maintenance · 6.9% CapEx · 8% vacancy |
 | **Results** | Cash Flow **$244/mo** · CoC **4.18%** · Cap Rate **7.16%** · DSCR **1.20** · GRM **7.4** |
-| **Score** | **11/14 — Great Deal** |
+| **Score** | Balanced Income Safety + 10-Year Performance score shown in the app |
 | **10-Year Pre-Tax Profit** | **$116,861** after selling costs (10.32% annualized · 12.06% IRR) |
 
 ### Borderline Deal — Thin But Positive
@@ -394,7 +461,7 @@ rent and square footage and clicking through.
 | **Property** | $265,000, $2,700/mo rent, 1,700 sqft |
 | **Auto-filled** | 2.5% growth · 4.2% maintenance · 7.6% CapEx · 8% vacancy |
 | **Results** | Cash Flow **$44/mo** · CoC **0.71%** · Cap Rate **6.19%** · DSCR **1.03** · BEO **90.4%** |
-| **Score** | **7/14 — Borderline** |
+| **Score** | Balanced Income Safety + 10-Year Performance score shown in the app |
 | **10-Year Pre-Tax Profit** | **$95,181** after selling costs (8.60% annualized · 9.17% IRR) |
 | **Why borderline** | Only $15,000 more than the good deal, and cash flow drops by more than half. Break-even occupancy of 87% leaves almost no room for a bad tenant or a dead furnace. |
 
@@ -405,12 +472,12 @@ rent and square footage and clicking through.
 | **Property** | $500,000, $2,000/mo rent, 2,400 sqft (0.4% rule — far below 1%) |
 | **Auto-filled** | 2.5% growth · 8.1% maintenance · 14.6% CapEx · 8% vacancy |
 | **Results** | Cash Flow **-$2,186/mo** · CoC **-18.73%** · DSCR **0.12** · BEO **201.3%** |
-| **Score** | **0/14 — Pass** |
+| **Score** | Balanced Income Safety + 10-Year Performance score shown in the app |
 | **10-Year Pre-Tax Profit** | **-$124,496** after selling costs |
 | **Why** | The mortgage alone exceeds rent. Even a long hold at the conservative appreciation assumption does not overcome the operating losses. |
 
 > **These numbers move when the model does.** Earlier versions of this README
-> documented **14/14 and a $104,189 five-year return** for a property at this
+> documented a perfect legacy score and a $104,189 five-year return for a property at this
 > price and rent. The gap is not a correction to the property — it is repair
 > reserves now sized off the building, and appreciation now reported after
 > selling costs. The earlier figure counted money that a roof
@@ -766,7 +833,9 @@ Search an entire zip code or city to **discover** investment deals — not just 
 
 ### Quick Score (6 Stars)
 
-Each listing is scored on six investor checks, aligned with the full [14-point scorecard](#deal-scorecard-14-point-system) so high quick scores reliably predict good full-analysis results:
+Each listing is scored on six investor checks as a discovery-only first pass.
+The full [balanced scorecard](#balanced-deal-scorecard-100-points) takes over
+after the property or batch row has enough expense and hold-period inputs:
 
 | Check | ★ Condition | What It Tells You |
 |-------|-------------|-------------------|

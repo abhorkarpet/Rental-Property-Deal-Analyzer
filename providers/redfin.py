@@ -505,6 +505,12 @@ _REDFIN_RENT_JS = """
     const cards = document.querySelectorAll('.MapHomeCardReact, [class*="HomeCard"]');
     const results = [];
     const seen = new Set();
+    const addResult = item => {
+        const key = item.address || [item.rent, item.beds, item.baths, item.sqft].join('|');
+        if (seen.has(key)) return;
+        seen.add(key);
+        results.push(item);
+    };
     cards.forEach(card => {
         const priceDiv = card.querySelector('.bp-Homecard__Price, [class*="Price"]');
         if (!priceDiv) return;
@@ -552,17 +558,78 @@ _REDFIN_RENT_JS = """
         }
         const addrEl = card.querySelector('.bp-Homecard__Address, [class*="homeAddressV2"]');
         const addr = addrEl ? addrEl.textContent.trim() : null;
-        const key = addr || rent.toString();
-        if (seen.has(key)) return;
-        seen.add(key);
-        results.push({ rent: rent, beds: beds, baths: baths, sqft: sqft, address: addr, daysOnMarket: daysOnMarket });
+        addResult({ rent: rent, beds: beds, baths: baths, sqft: sqft, address: addr, daysOnMarket: daysOnMarket });
+    });
+
+    // Redfin's current map-card markup omits some primary list cards while
+    // still exposing them in accessible page text. Parse only the section
+    // before "End of results" so the "Willing to be flexible" suggestions do
+    // not contaminate a filtered rent estimate.
+    const bodyText = document.body.innerText || '';
+    const endMatch = bodyText.match(/\\nEnd of results[^\\n]*/i);
+    const primaryText = endMatch ? bodyText.slice(0, endMatch.index) : '';
+    primaryText.split(/ABOUT THIS HOME/i).slice(1).forEach(section => {
+        const priceM = section.match(/\\$([\\d,]+)\\s*\\/\\s*mo\\b/i);
+        const bedsM = section.match(/(\\d+)\\s*(?:beds?|bd)\\b/i);
+        const bathsM = section.match(/(\\d+(?:\\.\\d+)?)\\s*(?:baths?|ba)\\b/i);
+        const sqftM = section.match(/([\\d,]+)\\s*sq\\s*ft\\b/i);
+        const addressM = section.match(/\\n([^\\n]+,\\s*[A-Z]{2}\\s+\\d{5})\\b/);
+        const domM = section.match(/(\\d+)\\s+days?\\s+(?:on\\s+Redfin|listed|on\\s+(?:the\\s+)?market)/i);
+        if (!priceM || !bedsM) return;
+        addResult({
+            rent: parseInt(priceM[1].replace(/,/g, '')),
+            beds: parseInt(bedsM[1]),
+            baths: bathsM ? parseFloat(bathsM[1]) : null,
+            sqft: sqftM ? parseInt(sqftM[1].replace(/,/g, '')) : null,
+            address: addressM ? addressM[1].trim() : null,
+            daysOnMarket: domM ? parseInt(domM[1]) : null
+        });
     });
     return results;
 }
 """
 
 
-async def _search_redfin_rentals(location: str, beds: int | None = None) -> dict:
+def _median_rent(values: list[int]) -> int:
+    """Return a conventional median instead of the upper middle value."""
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return round(ordered[middle])
+    return round((ordered[middle - 1] + ordered[middle]) / 2)
+
+
+def _qualify_redfin_rentals(
+    rentals: list[dict], beds: int | None = None, sqft: int | None = None
+) -> list[dict]:
+    """Reject Redfin fallback cards that do not match the subject property."""
+    qualified = [item for item in rentals if item.get("rent") and item["rent"] > 0]
+    if beds and beds > 0:
+        # Redfin can render unrelated "Willing to be flexible" cards despite
+        # an exact bedroom URL filter. Unknown bedrooms are not safe evidence.
+        qualified = [item for item in qualified if item.get("beds") == int(beds)]
+    if sqft and sqft > 0:
+        sized = [
+            item for item in qualified
+            if not item.get("sqft") or 0.5 <= item["sqft"] / sqft <= 1.75
+        ]
+        if sized:
+            qualified = sized
+    deduped = {}
+    for item in qualified:
+        key = (item.get("address") or "").strip().lower() or (
+            item.get("rent"), item.get("beds"), item.get("baths"), item.get("sqft")
+        )
+        deduped[key] = item
+    return list(deduped.values())
+
+
+async def _search_redfin_rentals(
+    location: str,
+    beds: int | None = None,
+    property_type: str | None = None,
+    sqft: int | None = None,
+) -> dict:
     """Search Redfin for rental listings to estimate market rent.
 
     For zip codes, navigates directly. For city names, uses Playwright
@@ -573,10 +640,12 @@ async def _search_redfin_rentals(location: str, beds: int | None = None) -> dict
     query = location.strip()
     is_zip = bool(re.match(r"^\d{5}$", query))
 
-    # Build bed filter suffix
-    bed_filter = ""
-    if beds and beds > 0:
-        bed_filter = f"/filter/min-beds={int(beds)},max-beds={int(beds)}"
+    normalized_type = (property_type or "").strip().lower()
+    rental_segment = (
+        "houses-for-rent"
+        if normalized_type in {"sfh", "sfr", "single family", "single-family", "house"}
+        else "apartments-for-rent"
+    )
 
     async with _search_semaphore, async_playwright() as p:
         browser = await p.chromium.launch(
@@ -596,7 +665,7 @@ async def _search_redfin_rentals(location: str, beds: int | None = None) -> dict
 
         if is_zip:
             # Zip code — navigate directly
-            base = f"https://www.redfin.com/zipcode/{query}/apartments-for-rent{bed_filter}"
+            base = f"https://www.redfin.com/zipcode/{query}/{rental_segment}"
             try:
                 await page.goto(base, wait_until="domcontentloaded", timeout=30000)
             except Exception:
@@ -618,10 +687,10 @@ async def _search_redfin_rentals(location: str, beds: int | None = None) -> dict
                 current_url = page.url
                 # Replace for-sale path with rental path
                 rental_url = re.sub(
-                    r"(/filter/.*)?$", "/apartments-for-rent" + bed_filter, current_url.rstrip("/")
+                    r"(/filter/.*)?$", "/" + rental_segment, current_url.rstrip("/")
                 )
-                if "/apartments-for-rent" not in rental_url:
-                    rental_url = current_url.rstrip("/") + "/apartments-for-rent" + bed_filter
+                if f"/{rental_segment}" not in rental_url:
+                    rental_url = current_url.rstrip("/") + "/" + rental_segment
                 await page.goto(rental_url, wait_until="domcontentloaded", timeout=20000)
             except Exception:
                 await browser.close()
@@ -645,14 +714,14 @@ async def _search_redfin_rentals(location: str, beds: int | None = None) -> dict
         rentals = await page.evaluate(_REDFIN_RENT_JS)
         await browser.close()
 
-    rentals = [r for r in rentals if r.get("rent") and r["rent"] > 0][:40]
+    rentals = _qualify_redfin_rentals(rentals, beds=beds, sqft=sqft)[:40]
     if not rentals:
         return {"rentals": [], "total": 0}
 
     rents = [r["rent"] for r in rentals]
     rents.sort()
     avg_rent = sum(rents) / len(rents)
-    median_rent = rents[len(rents) // 2]
+    median_rent = _median_rent(rents)
     low_rent = rents[int(len(rents) * 0.25)] if len(rents) >= 4 else rents[0]
     high_rent = rents[int(len(rents) * 0.75)] if len(rents) >= 4 else rents[-1]
     market_days = sorted(

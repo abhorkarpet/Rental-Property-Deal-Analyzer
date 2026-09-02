@@ -329,8 +329,23 @@
   }
   .batch-results-title { margin: 0; padding: 0; border: 0; }
   .batch-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
-  .batch-results-table { min-width: 1120px; }
+  .batch-results-table { min-width: 1560px; }
   .batch-results-table td { vertical-align: top; }
+  .batch-results-table th:last-child,
+  .batch-results-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    min-width: 155px;
+    background: var(--surface);
+    box-shadow: -10px 0 14px -14px rgba(0, 0, 0, 0.9);
+  }
+  .batch-results-table th:last-child { z-index: 3; }
+  .batch-analyze-btn { white-space: nowrap; }
+  .balanced-score { font-size: 1rem; }
+  .balanced-score.great { color: var(--green); }
+  .balanced-score.borderline { color: var(--yellow); }
+  .balanced-score.pass { color: var(--red); }
   .batch-deal-name { min-width: 210px; font-weight: 600; }
   .batch-deal-meta, .batch-warning {
     margin-top: 4px;
@@ -528,6 +543,20 @@
   .property-card .info { flex: 1; }
   .property-card .info h3 { font-size: 1rem; margin-bottom: 6px; }
   .property-card .info .details { font-size: 0.85rem; color: var(--text-muted); line-height: 1.8; }
+
+  .verified-incentives {
+    margin: -4px 0 20px;
+    padding: 14px 16px;
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    border-radius: var(--radius);
+    background: rgba(34, 197, 94, 0.08);
+    font-size: 0.82rem;
+  }
+  .verified-incentives strong { color: var(--green); }
+  .verified-incentives ul { margin: 8px 0 0 18px; }
+  .verified-incentives li + li { margin-top: 4px; }
+  .verified-incentives p { margin: 8px 0 0; color: var(--text-muted); font-size: 0.74rem; }
+  .results-incentives { margin: 0 0 22px; }
 
   /* Property summary in results */
   .property-summary {
@@ -1035,6 +1064,15 @@
   }
 
   .factor-list { margin-bottom: 20px; }
+
+  .factor-category {
+    padding: 12px 14px 7px;
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
 
   .factor-row {
     display: flex;

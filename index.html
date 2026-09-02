@@ -26,7 +26,7 @@
   <header>
     <h1>Rental Property Deal Analyzer</h1>
     <p>Real-time investment metrics &amp; AI-powered analysis</p>
-  <div class="app-version" id="appVersion">v3.0.0</div>
+  <div class="app-version" id="appVersion">v3.0.11</div>
   </header>
 
   <!-- Wizard Navigation -->
@@ -142,6 +142,12 @@
           <h3 id="propAddress">--</h3>
           <div class="details" id="propDetails">--</div>
         </div>
+      </div>
+
+      <div class="verified-incentives" id="verifiedIncentives" style="display:none;">
+        <strong>Brochure incentives included</strong>
+        <div id="verifiedIncentiveList"></div>
+        <p>One-time credits affect acquisition or promotional-year cash flow; they do not inflate recurring rent or stabilized NOI.</p>
       </div>
 
       <div class="input-grid" style="margin-bottom:12px;">
@@ -437,9 +443,10 @@
           <div class="batch-toolbar">
             <div>
               <div class="section-title batch-results-title" id="batchResultsTitle">Imported deals</div>
-              <div class="usage-note" style="display:block;">Default ranking uses stabilized cash-on-cash. Tax estimates and one-time incentives never enter the core rank.</div>
+              <div class="usage-note" style="display:block;">After ZIP estimates, default ranking uses the same balanced Income Safety + 10-Year Performance score as Full Analysis. Seller ROI and tax-benefit claims never enter the score.</div>
             </div>
             <div class="search-toolbar">
+              <button class="btn btn-small" id="batchMarketBtn" type="button" onclick="runBatchMarketEstimates()">Run ZIP Estimates</button>
               <button class="btn btn-small btn-secondary" id="batchAugmentBtn" type="button" onclick="augmentBatchBrochures()">Augment Brochures</button>
               <button class="btn btn-small btn-secondary" type="button" onclick="exportBatchCSV()">Export Review CSV</button>
             </div>
@@ -454,6 +461,9 @@
                   <th>ROI basis</th>
                   <th onclick="sortBatchResults('year1_coc_pct')" class="sortable" data-col="year1_coc_pct">Year-1 CoC</th>
                   <th onclick="sortBatchResults('stabilized_coc_pct')" class="sortable" data-col="stabilized_coc_pct">Stabilized CoC</th>
+                  <th onclick="sortBatchResults('market_rent')" class="sortable" data-col="market_rent">ZIP Rent</th>
+                  <th>Market Screen</th>
+                  <th onclick="sortBatchResults('market_analysis.dealPoints')" class="sortable" data-col="market_analysis.dealPoints">Balanced Score</th>
                   <th>Incentives</th>
                   <th>Confidence</th>
                   <th>Action</th>
@@ -631,8 +641,9 @@
         <input type="text" inputmode="decimal" class="currency-input" id="otherExpenses" value="0" min="0" step="25">
       </div>
       <div class="input-group">
-        <label for="expenseGrowth">Annual Expense Growth (%)</label>
+        <label for="expenseGrowth">Annual Fixed-Expense Growth (%)</label>
         <input type="number" id="expenseGrowth" value="2" min="0" max="50" step="0.5">
+        <div class="usage-note" style="display:block;">Applies to insurance, HOA, utilities, and other fixed expenses. Percentage-based costs grow with rent; property tax follows its own model.</div>
       </div>
     </div>
 
@@ -699,6 +710,8 @@
       <div class="metric-card"><div class="label"><span id="roiLabel">10yr</span> Pre-Tax Annualized ROI</div><div class="value" id="res5yrROI">--</div></div>
     </div>
 
+    <div class="verified-incentives results-incentives" id="resultsIncentives" style="display:none;"></div>
+
     <div class="invest-summary" id="investSummary">
       <div class="section-title">Where the return comes from — <span id="summaryHoldLabel">10-Year</span> hold</div>
       <div class="return-pillars" id="returnPillars"></div>
@@ -762,13 +775,13 @@
       <div class="metric-card"><div class="label">NOI</div><div class="value" id="resNOI">--</div></div>
       <div class="metric-card"><div class="label">Monthly Mortgage (P&amp;I)</div><div class="value" id="resPI">--</div></div>
       <div class="metric-card"><div class="label">Monthly PITI</div><div class="value" id="resPITI">--</div></div>
-      <div class="metric-card"><div class="label">Total Monthly Expenses</div><div class="value" id="resTotalExp">--</div></div>
+      <div class="metric-card"><div class="label">Operating Expenses (excl. P&amp;I)</div><div class="value" id="resTotalExp">--</div></div>
       <div class="metric-card"><div class="label">Gross Rent Multiplier</div><div class="value" id="resGRM">--</div></div>
       <div class="metric-card"><div class="label">Break-even Occupancy</div><div class="value" id="resBreakeven">--</div></div>
       <div class="metric-card"><div class="label">DSCR</div><div class="value" id="resDSCR">--</div></div>
       <div class="metric-card"><div class="label">Total Cash to Close</div><div class="value" id="resCashClose">--</div></div>
       <div class="metric-card"><div class="label">Operating Expense Ratio</div><div class="value" id="resOER">--</div></div>
-      <div class="metric-card"><div class="label">CF per Unit (monthly)</div><div class="value" id="resCFPerUnit">--</div></div>
+      <div class="metric-card"><div class="label">Stabilized CF / Unit (Monthly)</div><div class="value" id="resCFPerUnit">--</div></div>
       <div class="metric-card" id="resPricePerSqftCard" style="display:none;"><div class="label">Price / Sqft</div><div class="value" id="resPricePerSqft">--</div></div>
       <div class="metric-card" id="resRentPerSqftCard" style="display:none;"><div class="label">Rent / Sqft</div><div class="value" id="resRentPerSqft">--</div></div>
     </div>
@@ -801,22 +814,27 @@
     <!-- E) 5-Year Projection -->
     <div class="table-section">
       <div class="section-title"><span id="projHoldLabel">10-Year</span> Projection</div>
+      <div class="usage-note" id="projectionContextNote" style="display:none;"></div>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
             <tr>
               <th>Year</th>
+              <th>Gross Rent / Yr</th>
+              <th>PM Expense / Yr</th>
+              <th>One-Time Credits</th>
               <th>Annual Cash Flow</th>
               <th>Property Tax</th>
               <th>Property Value</th>
               <th>Loan Balance</th>
               <th>Total Equity</th>
-              <th>Cumulative ROI</th>
+              <th>Unrealized ROI*</th>
             </tr>
           </thead>
           <tbody id="projBody"></tbody>
         </table>
       </div>
+      <p class="exit-note">* Unrealized ROI includes cumulative cash flow, appreciation, and debt paydown relative to cash invested. Selling costs are applied only to the selected-hold exit profit and IRR.</p>
     </div>
 
     <!-- F) Amortization Table -->

@@ -156,6 +156,145 @@
     return { stars: stars, numericScore: numericScore, details: details, cssClass: cssClass };
   }
 
+  // Balanced underwriting score used by both the full wizard and enriched
+  // batch rows. Current income durability stays the majority of the verdict;
+  // selected-hold performance gets meaningful weight without allowing assumed
+  // appreciation to erase weak debt coverage.
+  function computeBalancedScore(metrics) {
+    var factors = [];
+    var incomePoints = 0;
+    var holdPoints = 0;
+
+    function addBand(options) {
+      var value = options.value;
+      var strong = value !== null && value !== undefined
+        && (options.higher ? value >= options.strong : value <= options.strong);
+      var ok = value !== null && value !== undefined
+        && (options.higher ? value >= options.ok : value <= options.ok);
+      var verdict = strong ? 'strong' : (ok ? 'ok' : 'weak');
+      var earned = strong ? options.weight : (ok ? options.weight / 2 : 0);
+      if (options.category === 'income') incomePoints += earned;
+      else holdPoints += earned;
+      factors.push({
+        category: options.category,
+        name: options.name,
+        value: options.format(value),
+        verdict: verdict,
+        reason: strong ? options.strongReason : (ok ? options.okReason : options.weakReason),
+        points: earned,
+        maxPoints: options.weight
+      });
+    }
+
+    addBand({
+      category: 'income', name: 'Stabilized Cash-on-Cash', value: metrics.coc,
+      higher: true, strong: 8, ok: 4, weight: 15, format: fmtPct,
+      strongReason: 'At or above the 8% stabilized target',
+      okReason: 'Positive but below the 8% target',
+      weakReason: 'Below the 4% minimum'
+    });
+    addBand({
+      category: 'income', name: 'Cap Rate', value: metrics.capRate,
+      higher: true, strong: 6, ok: 4, weight: 10, format: fmtPct,
+      strongReason: 'At or above the 6% unlevered target',
+      okReason: 'Between 4% and 6%', weakReason: 'Below 4%'
+    });
+
+    if (metrics.dscr === null && metrics.isCash) {
+      incomePoints += 15;
+      factors.push({
+        category: 'income', name: 'Stabilized DSCR', value: 'N/A — cash purchase',
+        verdict: 'strong', reason: 'No debt service to cover', points: 15, maxPoints: 15
+      });
+    } else {
+      addBand({
+        category: 'income', name: 'Stabilized DSCR', value: metrics.dscr,
+        higher: true, strong: 1.25, ok: 1.0, weight: 15,
+        format: function(value) { return value === null ? 'N/A' : fmt(value); },
+        strongReason: 'NOI covers debt service by at least 1.25x',
+        okReason: 'Covers debt, but with a thin margin',
+        weakReason: 'NOI does not cover debt service'
+      });
+    }
+
+    addBand({
+      category: 'income', name: 'Stabilized CF / Unit', value: metrics.monthlyCFPerUnit,
+      higher: true, strong: 200, ok: 100, weight: 10,
+      format: function(value) { return fmtDollar(value) + '/mo'; },
+      strongReason: 'At or above $200 per unit monthly',
+      okReason: 'Between $100 and $200 per unit monthly',
+      weakReason: 'Below $100 per unit monthly'
+    });
+    addBand({
+      category: 'income', name: 'Break-even Occupancy', value: metrics.breakeven,
+      higher: false, strong: 75, ok: 85, weight: 10, format: fmtPct,
+      strongReason: 'At least a 25% occupancy cushion',
+      okReason: 'Positive but thin occupancy cushion',
+      weakReason: 'Requires more than 85% occupancy'
+    });
+
+    var holdYears = Math.max(1, Number(metrics.holdYears) || 1);
+    var rows = (metrics.projRows || []).slice(0, holdYears);
+    var positiveYears = rows.filter(function(row) { return row.cf >= 0; }).length;
+    var positiveYearPct = rows.length ? positiveYears / rows.length * 100 : 0;
+    var averageAnnualOperatingCoC = metrics.totalCashInvested > 0
+      ? (Number(metrics.totalReturnCF) || 0) / holdYears / metrics.totalCashInvested * 100
+      : null;
+
+    addBand({
+      category: 'hold', name: 'After-Sale Pre-Tax IRR', value: metrics.preTaxIRR,
+      higher: true, strong: 12, ok: 8, weight: 15,
+      format: function(value) { return value === null ? 'N/A' : fmtPct(value); },
+      strongReason: 'At or above 12% after modeled selling costs',
+      okReason: 'Between 8% and 12% after selling costs',
+      weakReason: 'Below 8% or no calculable positive-return IRR'
+    });
+    addBand({
+      category: 'hold', name: 'Avg Annual Operating CoC', value: averageAnnualOperatingCoC,
+      higher: true, strong: 8, ok: 4, weight: 15,
+      format: function(value) { return value === null ? 'N/A' : fmtPct(value); },
+      strongReason: 'Hold-period cash flow averages at least 8% of cash invested yearly',
+      okReason: 'Hold-period cash flow averages between 4% and 8% yearly',
+      weakReason: 'Hold-period cash flow averages below 4% yearly'
+    });
+    addBand({
+      category: 'hold', name: 'Cash-Flow Positive Years', value: positiveYearPct,
+      higher: true, strong: 80, ok: 50, weight: 10,
+      format: function(value) {
+        return positiveYears + '/' + rows.length + ' (' + fmtPct(value) + ')';
+      },
+      strongReason: 'At least 80% of held years are cash-flow positive',
+      okReason: 'At least half of held years are cash-flow positive',
+      weakReason: 'Fewer than half of held years are cash-flow positive'
+    });
+
+    var incomeSafetyScore = Math.round(incomePoints / 60 * 100);
+    var holdPerformanceScore = Math.round(holdPoints / 40 * 100);
+    var overallScore = Math.round(incomePoints + holdPoints);
+    var dealGrade = overallScore >= 75 ? 'great' : (overallScore >= 45 ? 'borderline' : 'pass');
+    var dealText = overallScore >= 75 ? 'Great Deal'
+      : (overallScore >= 45 ? 'Borderline Deal' : 'Pass on This Deal');
+    var riskNote = incomeSafetyScore < 45 && holdPerformanceScore >= 50
+      ? ' Weak current income; projected hold returns depend on time and exit assumptions.'
+      : '';
+    return {
+      dealGrade: dealGrade,
+      dealText: dealText,
+      dealExpl: 'Balanced ' + overallScore + '/100 · Income safety '
+        + incomeSafetyScore + '/100 · ' + holdYears + '-year performance '
+        + holdPerformanceScore + '/100.' + riskNote,
+      dealFactors: factors,
+      dealPoints: overallScore,
+      dealMaxPoints: 100,
+      incomeSafetyScore: incomeSafetyScore,
+      holdPerformanceScore: holdPerformanceScore,
+      averageAnnualOperatingCoC: averageAnnualOperatingCoC,
+      cashPositiveYears: positiveYears,
+      cashPositiveYearPct: positiveYearPct,
+      scoreHoldYears: holdYears
+    };
+  }
+
   function computeDeal(inp) {
     var price = inp.price;
     var arvVal = inp.arv;
@@ -191,6 +330,7 @@
     var expGrowthPct = inp.expGrowthPct;
     var propertyType = inp.propertyType;
     var appreciationProfile = inp.appreciationProfile;
+    var incentives = Array.isArray(inp.incentives) ? inp.incentives : [];
 
     // Loan
     var dpAmount = isCash ? price : price * dpPct / 100;
@@ -227,7 +367,28 @@
 
     // Total cash invested
     var pointsCost = loanAmount * pointsVal / 100;
-    var totalCashInvested = dpAmount + closingCostsVal + rehabVal + pointsCost;
+    var closingCreditOffered = 0;
+    var cashBackApplied = 0;
+    var rentCredit = 0;
+    incentives.forEach(function(incentive) {
+      var amount = Number(incentive && incentive.amount) || 0;
+      if (incentive.type === 'closing_credit') closingCreditOffered += amount;
+      else if (incentive.type === 'cash_back' || incentive.type === 'unallocated_seller_funds') {
+        cashBackApplied += amount;
+      } else if (incentive.type === 'rent_credit') rentCredit += amount;
+    });
+    // A stated closing credit can pay eligible acquisition/loan costs, but it
+    // cannot silently become down-payment cash. Preserve any excess so the UI
+    // can disclose it instead of manufacturing a benefit.
+    var closingCreditApplied = Math.min(
+      closingCreditOffered,
+      Math.max(0, closingCostsVal + pointsCost)
+    );
+    var closingCreditUnused = Math.max(0, closingCreditOffered - closingCreditApplied);
+    var acquisitionCredits = closingCreditApplied + cashBackApplied;
+    var grossUpfrontCosts = closingCostsVal + rehabVal + pointsCost;
+    var netUpfrontCosts = grossUpfrontCosts - acquisitionCredits;
+    var totalCashInvested = Math.max(0, dpAmount + netUpfrontCosts);
 
     // Cash on Cash
     var coc = totalCashInvested > 0 ? (annualCF / totalCashInvested) * 100 : 0;
@@ -316,9 +477,20 @@
       return marketTax;
     }
 
+    function promotionalMonthsInYear(incentive, year) {
+      var promoStart = Math.max(1, Number(incentive.start_month) || 1);
+      var promoEnd = Math.max(promoStart, Number(incentive.end_month) || promoStart);
+      var yearStart = (year - 1) * 12 + 1;
+      var yearEnd = year * 12;
+      return Math.max(0, Math.min(promoEnd, yearEnd) - Math.max(promoStart, yearStart) + 1);
+    }
+
     for (var yr = 1; yr <= PROJECTION_YEARS; yr++) {
-      var rentMult = Math.pow(1 + incomeGrowthPct / 100, yr);
-      var expMult = Math.pow(1 + expGrowthPct / 100, yr);
+      // Year 1 is the acquisition-year run rate entered by the user. Growth
+      // begins in Year 2; otherwise a $1,550 rent with 2% growth is silently
+      // presented as $1,581 in the very first projection year.
+      var rentMult = Math.pow(1 + incomeGrowthPct / 100, yr - 1);
+      var expMult = Math.pow(1 + expGrowthPct / 100, yr - 1);
       var valMult = Math.pow(1 + valueGrowthPct / 100, yr);
 
       var propVal = price * valMult;
@@ -331,14 +503,26 @@
       var moFixedOpex = annualPropertyTax / 12
         + (monthlyInsurance + hoaMonth + utilMonth + otherExpMonth) * expMult;
       var moTotalOpex = moFixedOpex + moMaint + moVac + moCapex + moMgmt;
-      var yrCF = (moIncome - moTotalOpex - monthlyPI) * 12;
+      var pmIncentiveSavings = 0;
+      incentives.forEach(function(incentive) {
+        if (!incentive || incentive.type !== 'property_management_discount') return;
+        var promoMonths = promotionalMonthsInYear(incentive, yr);
+        var promoRate = Number(incentive.promotional_rate_pct);
+        if (!promoMonths || !isFinite(promoRate)) return;
+        pmIncentiveSavings += moIncome
+          * Math.max(0, mgmtPct - promoRate) / 100 * promoMonths;
+      });
+      var rentCreditForYear = yr === 1 ? rentCredit : 0;
+      var incentiveCashFlow = pmIncentiveSavings + rentCreditForYear;
+      var annualManagementExpense = Math.max(0, moMgmt * 12 - pmIncentiveSavings);
+      var yrCF = (moIncome - moTotalOpex - monthlyPI) * 12 + incentiveCashFlow;
       cumulativeCF += yrCF;
       var loanBal = (yr <= amortSchedule.length) ? amortSchedule[yr - 1].balance : 0;
       var equity = propVal - loanBal;
       // Unrealized return before selling costs. Upfront costs are still real
       // cash outflows and must be subtracted from profit.
       var unrealizedProfit = cumulativeCF + (equity - initialEquity)
-        - closingCostsVal - rehabVal - pointsCost;
+        - netUpfrontCosts;
       var cumROI = totalCashInvested > 0 ? (unrealizedProfit / totalCashInvested) * 100 : 0;
 
       // The annual P&L lines the what-if table reports. Purely additive --
@@ -347,7 +531,14 @@
                       loanBal: loanBal, equity: equity, cumROI: cumROI,
                       income: moIncome * 12, opex: moTotalOpex * 12,
                       propertyTax: annualPropertyTax,
+                      rentIncome: totalRent * rentMult * 12,
+                      otherIncome: otherInc * rentMult * 12,
+                      managementExpense: annualManagementExpense,
                       noi: (moIncome - moTotalOpex) * 12,
+                      incentiveCashFlow: incentiveCashFlow,
+                      oneTimeCredits: rentCreditForYear,
+                      pmIncentiveSavings: pmIncentiveSavings,
+                      rentCredit: rentCreditForYear,
                       coc: totalCashInvested > 0 ? (yrCF / totalCashInvested) * 100 : 0 });
     }
 
@@ -407,7 +598,7 @@
       var loanBal = row ? row.loanBal : loanAmount;
       var cumCF = row ? row.cumCF : 0;
       var paydown = loanAmount - loanBal;
-      var upfrontCosts = closingCostsVal + rehabVal + pointsCost;
+      var upfrontCosts = netUpfrontCosts;
       var preTaxProfit = cumCF + appreciationAfterSellingCosts + paydown - upfrontCosts;
       var annualized = 0;
       if (totalCashInvested > 0) {
@@ -503,75 +694,24 @@
         Math.round(ratioDrift) + '% \u2014 an implicit bet that cap rates keep compressing.';
     }
 
-    // Deal Score — point-based scorecard
-    var dealFactors = [];
-    var dealPoints = 0;
-    var dealMaxPoints = 0;
-
-    // CoC Return (2/1/0)
-    dealMaxPoints += 2;
-    if (coc >= 8) { dealPoints += 2; dealFactors.push({ name: 'Cash-on-Cash Return', value: fmtPct(coc), verdict: 'strong', reason: 'Exceeds 8% target' }); }
-    else if (coc >= 4) { dealPoints += 1; dealFactors.push({ name: 'Cash-on-Cash Return', value: fmtPct(coc), verdict: 'ok', reason: 'Above 4% minimum but below 8% target' }); }
-    else { dealFactors.push({ name: 'Cash-on-Cash Return', value: fmtPct(coc), verdict: 'weak', reason: 'Below 4% minimum threshold' }); }
-
-    // Cap Rate (2/1/0)
-    dealMaxPoints += 2;
-    if (capRate >= 6) { dealPoints += 2; dealFactors.push({ name: 'Cap Rate', value: fmtPct(capRate), verdict: 'strong', reason: 'Exceeds 6% target' }); }
-    else if (capRate >= 4) { dealPoints += 1; dealFactors.push({ name: 'Cap Rate', value: fmtPct(capRate), verdict: 'ok', reason: 'Above 4% but below 6% target' }); }
-    else { dealFactors.push({ name: 'Cap Rate', value: fmtPct(capRate), verdict: 'weak', reason: 'Below 4% minimum threshold' }); }
-
-    // DSCR (skip if cash)
-    if (dscr !== null) {
-      dealMaxPoints += 2;
-      if (dscr >= 1.25) { dealPoints += 2; dealFactors.push({ name: 'DSCR', value: fmt(dscr), verdict: 'strong', reason: 'Strong debt service coverage (>= 1.25)' }); }
-      else if (dscr >= 1.0) { dealPoints += 1; dealFactors.push({ name: 'DSCR', value: fmt(dscr), verdict: 'ok', reason: 'Covers debt but thin margin (1.0-1.25)' }); }
-      else { dealFactors.push({ name: 'DSCR', value: fmt(dscr), verdict: 'weak', reason: 'Cannot cover debt payments (< 1.0)' }); }
-    }
-
-    // CF per Unit/mo (2/1/0)
-    dealMaxPoints += 2;
-    if (monthlyCFPerUnit >= 200) { dealPoints += 2; dealFactors.push({ name: 'Cash Flow / Unit', value: fmtDollar(monthlyCFPerUnit) + '/mo', verdict: 'strong', reason: 'Exceeds $200/unit target' }); }
-    else if (monthlyCFPerUnit >= 100) { dealPoints += 1; dealFactors.push({ name: 'Cash Flow / Unit', value: fmtDollar(monthlyCFPerUnit) + '/mo', verdict: 'ok', reason: 'Above $100 but below $200/unit' }); }
-    else { dealFactors.push({ name: 'Cash Flow / Unit', value: fmtDollar(monthlyCFPerUnit) + '/mo', verdict: 'weak', reason: 'Below $100/unit minimum' }); }
-
-    // Break-even Occupancy (2/1/0)
-    dealMaxPoints += 2;
-    if (breakeven <= 75) { dealPoints += 2; dealFactors.push({ name: 'Break-even Occupancy', value: fmtPct(breakeven), verdict: 'strong', reason: 'Strong safety margin (<= 75%)' }); }
-    else if (breakeven <= 85) { dealPoints += 1; dealFactors.push({ name: 'Break-even Occupancy', value: fmtPct(breakeven), verdict: 'ok', reason: 'Acceptable but tight margin (75-85%)' }); }
-    else { dealFactors.push({ name: 'Break-even Occupancy', value: fmtPct(breakeven), verdict: 'weak', reason: 'High vacancy risk (> 85%)' }); }
-
-    // 1% Rule (2/0)
-    dealMaxPoints += 2;
-    if (onePercentPass) { dealPoints += 2; dealFactors.push({ name: '1% Rule', value: fmt(onePercentPct) + '%', verdict: 'strong', reason: 'Rent meets or exceeds 1% of price' }); }
-    else { dealFactors.push({ name: '1% Rule', value: fmt(onePercentPct) + '%', verdict: 'weak', reason: 'Rent below 1% of purchase price' }); }
-
-    // 50% Rule (2/0)
-    var fiftyPass = fiftyPctRatio <= 50;
-    dealMaxPoints += 2;
-    if (fiftyPass) { dealPoints += 2; dealFactors.push({ name: '50% Rule', value: fmt(fiftyPctRatio) + '%', verdict: 'strong', reason: 'Operating expenses under 50% of income' }); }
-    else { dealFactors.push({ name: '50% Rule', value: fmt(fiftyPctRatio) + '%', verdict: 'weak', reason: 'Operating expenses exceed 50% of income' }); }
-
-    var dealPctScore = dealMaxPoints > 0 ? (dealPoints / dealMaxPoints) * 100 : 0;
-    var dealGrade, dealText, dealExpl;
-    if (dealPctScore >= 75) {
-      dealGrade = 'great';
-      dealText = 'Great Deal';
-      dealExpl = dealPoints + '/' + dealMaxPoints + ' points — Strong across key investment metrics.';
-    } else if (dealPctScore >= 45) {
-      dealGrade = 'borderline';
-      dealText = 'Borderline Deal';
-      dealExpl = dealPoints + '/' + dealMaxPoints + ' points — Some metrics are acceptable but the deal has weaknesses.';
-    } else {
-      dealGrade = 'pass';
-      dealText = 'Pass on This Deal';
-      dealExpl = dealPoints + '/' + dealMaxPoints + ' points — Most metrics fall below investment thresholds.';
-    }
+    var balancedScore = computeBalancedScore({
+      coc: coc, capRate: capRate, dscr: dscr, isCash: isCash,
+      monthlyCFPerUnit: monthlyCFPerUnit, breakeven: breakeven,
+      holdYears: holdYearsPre, projRows: projRows,
+      totalReturnCF: totalReturnCF, totalCashInvested: totalCashInvested,
+      preTaxIRR: exitBase.irr
+    });
 
     // Store results
     return {
       price: price, arv: arvVal, closingCosts: closingCostsVal, rehab: rehabVal,
       valueGrowthPct: valueGrowthPct, isCash: isCash, dpPct: dpPct, dpAmount: dpAmount,
       rate: rate, termYears: termYears, points: pointsVal, pointsCost: pointsCost,
+      incentives: incentives, closingCreditOffered: closingCreditOffered,
+      closingCreditApplied: closingCreditApplied, closingCreditUnused: closingCreditUnused,
+      cashBackApplied: cashBackApplied, acquisitionCredits: acquisitionCredits,
+      rentCredit: rentCredit, grossUpfrontCosts: grossUpfrontCosts,
+      netUpfrontCosts: netUpfrontCosts,
       loanAmount: loanAmount, totalRent: totalRent, otherIncome: otherInc,
       totalMonthlyIncome: totalMonthlyIncome, incomeGrowthPct: incomeGrowthPct,
       taxesYr: taxesYr, insuranceYr: insuranceYr, maintPct: maintPct, vacPct: vacPct,
@@ -580,12 +720,21 @@
       otherExpMonth: otherExpMonth, expGrowthPct: expGrowthPct,
       monthlyPI: monthlyPI, piti: piti, totalOpex: totalOpex, monthlyCF: monthlyCF,
       annualCF: annualCF, noi: noi, totalCashInvested: totalCashInvested,
+      firstYearAnnualCF: projRows.length ? projRows[0].cf : annualCF,
+      firstYearMonthlyEquivalent: projRows.length ? projRows[0].cf / 12 : monthlyCF,
       coc: coc, capRate: capRate, grm: grm, breakeven: breakeven, dscr: dscr,
       totalCashClose: totalCashClose, onePercentPass: onePercentPass, onePercentPct: onePercentPct,
       fiftyPctRatio: fiftyPctRatio, show70: show70, seventyPctVal: seventyPctVal,
       seventyPctPass: seventyPctPass, preTaxAnnualizedROI: preTaxAnnualizedROI,
-      dealGrade: dealGrade, dealText: dealText, dealExpl: dealExpl,
-      dealFactors: dealFactors, dealPoints: dealPoints, dealMaxPoints: dealMaxPoints,
+      dealGrade: balancedScore.dealGrade, dealText: balancedScore.dealText,
+      dealExpl: balancedScore.dealExpl, dealFactors: balancedScore.dealFactors,
+      dealPoints: balancedScore.dealPoints, dealMaxPoints: balancedScore.dealMaxPoints,
+      incomeSafetyScore: balancedScore.incomeSafetyScore,
+      holdPerformanceScore: balancedScore.holdPerformanceScore,
+      averageAnnualOperatingCoC: balancedScore.averageAnnualOperatingCoC,
+      cashPositiveYears: balancedScore.cashPositiveYears,
+      cashPositiveYearPct: balancedScore.cashPositiveYearPct,
+      scoreHoldYears: balancedScore.scoreHoldYears,
       sqft: sqft, pricePerSqft: pricePerSqft, pricePerUnit: pricePerUnit,
       rentPerSqft: rentPerSqft, monthlyCFPerUnit: monthlyCFPerUnit, oer: oer,
       unitCount: unitCount,
@@ -666,6 +815,7 @@
     PROJECTION_YEARS: PROJECTION_YEARS,
     INVESTOR_DOWN_PAYMENT: INVESTOR_DOWN_PAYMENT,
     computeQuickScore: computeQuickScore,
+    computeBalancedScore: computeBalancedScore,
     computeDeal: computeDeal,
     computeTaxContext: computeTaxContext,
     buildAmortSchedule: buildAmortSchedule

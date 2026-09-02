@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import io
 import re
 import time
@@ -22,6 +23,10 @@ from openpyxl import load_workbook
 MAX_IMPORT_BYTES = 10 * 1024 * 1024
 MAX_DEALS = 200
 BROCHURE_CACHE_SECONDS = 24 * 60 * 60
+DEFAULT_DOWN_PAYMENT_PCT = 25.0
+DEFAULT_CLOSING_COST_PCT = 3.0
+DEFAULT_MANAGEMENT_PCT = 8.0
+DEFAULT_LOAN_TERM_YEARS = 30
 
 
 class BatchReviewError(ValueError):
@@ -152,17 +157,61 @@ def parse_incentives(text: str | None) -> list[dict]:
         add("closing_credit", f"{_money_label(amount)} post-closing credit",
             amount=amount, choice_group="seller_funds")
 
+    # A purpose-bound closing credit is safer than generic seller funds: it
+    # can offset eligible acquisition costs, but never the down payment or
+    # recurring operating income. Keep post-closing cash alternatives above
+    # in the explicit seller-funds choice group.
+    for match in re.finditer(amount_pattern + r"\s+closing\s+credit", raw, re.I):
+        amount = _amount_token(match.group(1))
+        add("closing_credit", f"{_money_label(amount)} closing credit",
+            amount=amount, confidence="high")
+
+    for match in re.finditer(r"closing\s+credit\s*:\s*" + amount_pattern, raw, re.I):
+        amount = _amount_token(match.group(1))
+        add("closing_credit", f"{_money_label(amount)} closing credit",
+            amount=amount, confidence="high")
+
+    for match in re.finditer(amount_pattern + r"\s+rent\s+credit", raw, re.I):
+        amount = _amount_token(match.group(1))
+        add("rent_credit", f"{_money_label(amount)} one-time rent credit",
+            amount=amount, end_month=12, confidence="high")
+
+    for match in re.finditer(r"rent\s+credit\s*:\s*" + amount_pattern, raw, re.I):
+        amount = _amount_token(match.group(1))
+        add("rent_credit", f"{_money_label(amount)} one-time rent credit",
+            amount=amount, end_month=12, confidence="high")
+
     for match in re.finditer(amount_pattern + r"\s*(?:of\s+)?(?:potential\s+)?tax\s+savings", raw, re.I):
         amount = _amount_token(match.group(1))
         add("tax_estimate", f"{_money_label(amount)} estimated tax benefit",
             amount=amount, included_in_core=False, choice_group="tax_scenario")
 
+    pm_duration = re.search(
+        r"(\d+(?:\.\d+)?)\s*%\s*(?:pm|property\s*management)\s*"
+        r"(?:for|through)\s*(\d+)\s*(years?|months?)",
+        raw, re.I,
+    )
     pm_pair = re.search(
         r"(\d+(?:\.\d+)?)\s*%\s*(?:pm|property\s*management).*?"
         r"(?:1st|first|year\s*1).*?(\d+(?:\.\d+)?)\s*%\s*(?:year\s*2|after|thereafter)?",
         raw, re.I,
     )
-    if pm_pair:
+    if pm_duration:
+        duration = int(pm_duration.group(2))
+        unit = pm_duration.group(3).lower()
+        end_month = duration * 12 if unit.startswith("year") else duration
+        duration_label = (
+            f"{duration} year{'s' if duration != 1 else ''}"
+            if unit.startswith("year")
+            else f"{duration} month{'s' if duration != 1 else ''}"
+        )
+        add(
+            "property_management_discount",
+            f"{pm_duration.group(1)}% PM for {duration_label}",
+            promo_rate=float(pm_duration.group(1)), normal_rate=None,
+            end_month=end_month, confidence="high",
+        )
+    elif pm_pair:
         add(
             "property_management_discount",
             f"{pm_pair.group(1)}% PM in Year 1, {pm_pair.group(2)}% stabilized",
@@ -347,6 +396,79 @@ def _calculate_screens(deal: dict) -> None:
         )
 
 
+def calculate_market_screen(
+    deal: dict,
+    *,
+    monthly_rent: float | None,
+    vacancy_pct: float,
+    annual_tax: float,
+    annual_insurance: float,
+    maintenance_pct: float,
+    capex_pct: float,
+    mortgage_rate_pct: float | None,
+) -> dict:
+    """Calculate a comparable ZIP-level pre-screen with explicit defaults.
+
+    This is deliberately narrower than the full analyzer. Unknown HOA,
+    utilities, repairs, points, and other property-specific costs remain zero
+    and are disclosed as missing instead of silently inferred.
+    """
+    price = _number(deal.get("price")) or 0
+    rent = _number(monthly_rent)
+    if price <= 0 or rent is None or rent <= 0:
+        return {}
+
+    management_pct = DEFAULT_MANAGEMENT_PCT
+    for incentive in deal.get("incentives") or []:
+        if (
+            incentive.get("type") == "property_management_discount"
+            and incentive.get("normal_rate_pct") is not None
+        ):
+            management_pct = float(incentive["normal_rate_pct"])
+            break
+
+    down_payment = price * DEFAULT_DOWN_PAYMENT_PCT / 100
+    loan_amount = price - down_payment
+    closing_costs = price * DEFAULT_CLOSING_COST_PCT / 100
+    total_cash = down_payment + closing_costs
+    monthly_rate = (mortgage_rate_pct or 0) / 100 / 12
+    periods = DEFAULT_LOAN_TERM_YEARS * 12
+    if loan_amount <= 0:
+        monthly_pi = 0
+    elif monthly_rate > 0:
+        factor = (1 + monthly_rate) ** periods
+        monthly_pi = loan_amount * monthly_rate * factor / (factor - 1)
+    else:
+        monthly_pi = loan_amount / periods
+
+    monthly_opex = (
+        annual_tax / 12
+        + annual_insurance / 12
+        + rent * vacancy_pct / 100
+        + rent * maintenance_pct / 100
+        + rent * capex_pct / 100
+        + rent * management_pct / 100
+    )
+    monthly_cf = rent - monthly_opex - monthly_pi
+    noi = (rent - monthly_opex) * 12
+    annual_debt = monthly_pi * 12
+    return {
+        "monthly_cash_flow": round(monthly_cf),
+        "cash_on_cash_pct": round(monthly_cf * 12 / total_cash * 100, 1)
+        if total_cash else None,
+        "cap_rate_pct": round(noi / price * 100, 1),
+        "dscr": round(noi / annual_debt, 2) if annual_debt else None,
+        "noi_annual": round(noi),
+        "cash_invested": round(total_cash),
+        "monthly_pi": round(monthly_pi),
+        "management_pct": management_pct,
+        "mortgage_rate_pct": mortgage_rate_pct,
+        "down_payment_pct": DEFAULT_DOWN_PAYMENT_PCT,
+        "closing_cost_pct": DEFAULT_CLOSING_COST_PCT,
+        "missing_costs": ["HOA", "utilities", "repairs", "loan points"],
+    }
+
+
 def parse_csv_text(text: str) -> dict:
     if len(text.encode("utf-8")) > MAX_IMPORT_BYTES:
         raise BatchReviewError("CSV is larger than the 10 MB import limit.")
@@ -488,6 +610,7 @@ async def fetch_google_sheet(url: str, client: httpx.AsyncClient | None = None) 
 
 
 _brochure_cache: dict[str, tuple[float, str]] = {}
+_brochure_llm_cache: dict[str, tuple[float, dict]] = {}
 
 
 def google_doc_id(url: str) -> str | None:
@@ -537,6 +660,14 @@ def augment_from_brochure(deal: dict, text: str) -> dict:
         "baths": _extract_labeled_number(text, ["Bathrooms", "Baths"]),
         "year_built": _extract_labeled_number(text, ["Year Built"]),
     }
+    if extracted["claimed_initial_cash"] is None:
+        headline_total_cash = re.search(
+            r"\$\s*([\d,.]+\s*[kK]?)\s+total\s+cash\b", text, re.I
+        )
+        if headline_total_cash:
+            extracted["claimed_initial_cash"] = _number(
+                headline_total_cash.group(1)
+            )
     for field, value in extracted.items():
         if value is not None and not result.get(field):
             result[field] = int(value) if field in {"sqft", "year_built"} else value
@@ -607,8 +738,130 @@ def augment_from_brochure(deal: dict, text: str) -> dict:
     return result
 
 
-async def augment_brochures(deals: list[dict]) -> dict:
+def brochure_needs_llm(text: str, deal: dict) -> bool:
+    """Use a model only when deterministic extraction left material gaps."""
+    detail_fields = ("monthly_rent", "sqft", "beds", "baths", "year_built")
+    missing_details = sum(deal.get(field) in {None, ""} for field in detail_fields)
+    incentive_language = bool(re.search(
+        r"\b(?:incentive|credit|cash\s*back|buy\s*down|buydown|"
+        r"property\s*management|\bPM\b|tax\s+savings)\b",
+        text, re.I,
+    ))
+    has_incentives = bool(deal.get("incentives"))
+    ambiguous = any(
+        "conflicting" in str(warning).lower()
+        for warning in deal.get("warnings") or []
+    )
+    return missing_details >= 2 or (incentive_language and not has_incentives) or ambiguous
+
+
+def merge_llm_brochure_result(deal: dict, text: str, extraction: dict) -> dict:
+    """Merge only source-grounded model output without replacing hard parses."""
+    result = dict(deal)
+    result["incentives"] = [dict(item) for item in deal.get("incentives") or []]
+    result["warnings"] = list(deal.get("warnings") or [])
+    result["field_sources"] = dict(deal.get("field_sources") or {})
+    added_fields = 0
+    added_incentives = 0
+
+    fields = extraction.get("fields") if isinstance(extraction, dict) else {}
+    if not isinstance(fields, dict):
+        fields = {}
+    numeric_fields = {
+        "monthly_rent": False, "claimed_initial_cash": False,
+        "claimed_monthly_cash_flow": False, "sqft": True, "beds": False,
+        "baths": False, "year_built": True,
+    }
+    for field, as_integer in numeric_fields.items():
+        value = _number(fields.get(field))
+        if result.get(field) not in {None, ""} or value is None or value < 0:
+            continue
+        result[field] = int(value) if as_integer else value
+        result["field_sources"][field] = "brochure_llm"
+        added_fields += 1
+
+    normalized_text = " ".join(text.lower().split())
+    allowed_types = {
+        "property_management_discount", "rent_credit", "closing_credit",
+        "cash_back", "rate_buydown", "tax_estimate",
+        "unallocated_seller_funds",
+    }
+    existing = {
+        (item.get("type"), _number(item.get("amount")), item.get("promotional_rate_pct"),
+         item.get("start_month"), item.get("end_month"))
+        for item in result["incentives"]
+    }
+    llm_incentives = extraction.get("incentives") if isinstance(extraction, dict) else []
+    if not isinstance(llm_incentives, list):
+        llm_incentives = []
+    for item in llm_incentives:
+        if not isinstance(item, dict) or item.get("type") not in allowed_types:
+            continue
+        confidence = str(item.get("confidence") or "").lower()
+        evidence = " ".join(str(item.get("evidence") or "").lower().split())
+        # Evidence must be a short phrase actually present in the brochure;
+        # low-confidence guesses remain warnings rather than model inputs.
+        if confidence not in {"high", "medium"} or not evidence or evidence not in normalized_text:
+            continue
+        kind = item["type"]
+        amount = _number(item.get("amount"))
+        promo_rate = _number(item.get("promotional_rate_pct"))
+        normal_rate = _number(item.get("normal_rate_pct"))
+        start_month = _integer(item.get("start_month")) or 1
+        end_month = _integer(item.get("end_month"))
+        if kind in {"rent_credit", "closing_credit", "cash_back", "tax_estimate"} and amount is None:
+            continue
+        if kind == "property_management_discount" and (promo_rate is None or end_month is None):
+            continue
+        if kind == "rate_buydown" and promo_rate is None:
+            continue
+        key = (kind, amount, promo_rate, start_month, end_month)
+        if key in existing:
+            continue
+        choice_group = None
+        if kind in {"cash_back", "rate_buydown", "unallocated_seller_funds"} or item.get("is_alternative") is True:
+            choice_group = "seller_funds"
+        if kind == "tax_estimate":
+            choice_group = "tax_scenario"
+        label = str(item.get("label") or "").strip() or kind.replace("_", " ").title()
+        result["incentives"].append({
+            "id": "",
+            "type": kind,
+            "label": label[:160],
+            "amount": amount,
+            "promotional_rate_pct": promo_rate,
+            "normal_rate_pct": normal_rate,
+            "start_month": start_month,
+            "end_month": end_month,
+            "included_in_core": kind != "tax_estimate",
+            "choice_group": choice_group,
+            "confidence": confidence,
+            "source": "brochure_llm",
+            "evidence": str(item.get("evidence"))[:200],
+        })
+        existing.add(key)
+        added_incentives += 1
+
+    for index, item in enumerate(result["incentives"], start=1):
+        item["id"] = f"incentive-{index}"
+
+    ambiguities = extraction.get("ambiguities") if isinstance(extraction, dict) else []
+    if isinstance(ambiguities, list):
+        for ambiguity in ambiguities[:5]:
+            message = str(ambiguity).strip()
+            if message:
+                result["warnings"].append("LLM brochure review: " + message[:240])
+
+    result["brochure_llm_status"] = "augmented" if (added_fields or added_incentives) else "reviewed"
+    result["brochure_llm_added_fields"] = added_fields
+    result["brochure_llm_added_incentives"] = added_incentives
+    _calculate_screens(result)
+    return result
+
+
+async def augment_brochures(deals: list[dict], llm_parser=None) -> dict:
     semaphore = asyncio.Semaphore(6)
+    llm_semaphore = asyncio.Semaphore(2)
     async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
         async def augment(deal):
             url = deal.get("brochure_url")
@@ -619,7 +872,28 @@ async def augment_brochures(deals: list[dict]) -> dict:
             try:
                 async with semaphore:
                     text = await fetch_brochure_text(url, client)
-                return augment_from_brochure(deal, text)
+                result = augment_from_brochure(deal, text)
+                if llm_parser is None or not brochure_needs_llm(text, result):
+                    result["brochure_llm_status"] = "not_needed"
+                    return result
+                cache_key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                cached = _brochure_llm_cache.get(cache_key)
+                if cached and time.time() - cached[0] < BROCHURE_CACHE_SECONDS:
+                    extraction = cached[1]
+                    result = merge_llm_brochure_result(result, text, extraction)
+                    result["brochure_llm_cache_hit"] = True
+                    return result
+                try:
+                    async with llm_semaphore:
+                        extraction = await llm_parser(text, result)
+                    if isinstance(extraction, dict):
+                        _brochure_llm_cache[cache_key] = (time.time(), extraction)
+                        return merge_llm_brochure_result(result, text, extraction)
+                    result["brochure_llm_status"] = "unavailable"
+                except Exception as exc:
+                    result["brochure_llm_status"] = "unavailable"
+                    result["brochure_llm_error"] = str(exc)[:240]
+                return result
             except BatchReviewError as exc:
                 result = dict(deal)
                 result["brochure_status"] = "unavailable"
@@ -631,4 +905,6 @@ async def augment_brochures(deals: list[dict]) -> dict:
         "deals": augmented,
         "augmented_count": sum(d.get("brochure_status") == "augmented" for d in augmented),
         "unavailable_count": sum(d.get("brochure_status") == "unavailable" for d in augmented),
+        "llm_augmented_count": sum(d.get("brochure_llm_status") == "augmented" for d in augmented),
+        "llm_reviewed_count": sum(d.get("brochure_llm_status") in {"augmented", "reviewed"} for d in augmented),
     }

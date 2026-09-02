@@ -215,15 +215,20 @@ def test_single_property_results_whatif_ai_and_report_export(page, live_server, 
     )
     open_app(page, live_server, {"/api/analyze-ai-stream": stream})
 
+    assert page.locator('label[for="expenseGrowth"]').inner_text().startswith("Annual Fixed-Expense Growth (%)")
+    assert "Percentage-based costs grow with rent" in page.locator("#expenseGrowth + .usage-note").inner_text()
+
     page.evaluate("tryExampleDeal()")
     assert page.locator("#step6").evaluate("el => el.classList.contains('active')")
     assert page.locator(".results-view.active").get_attribute("data-results-panel") == "summary"
     assert page.locator("#dealVerdict").inner_text() != "--"
     assert page.locator("#resMonthlyCF").inner_text() != "--"
     assert page.locator("#growthWarning").inner_text().find("Held 10 years") >= 0
+    assert "Income safety" in page.locator("#dealExplanation").inner_text()
 
     page.locator('[data-results-view="whatif"]').click()
     page.locator('#whatifBody').wait_for(state="visible")
+    assert page.locator('.wf-row[data-key="expGrowthPct"] .wf-name').text_content() == "Fixed-expense growth"
     slider = page.locator('.wf-row[data-key="price"] input[type="range"]')
     slider.evaluate(
         "el => { el.value = el.max; el.dispatchEvent(new Event('input', {bubbles:true})); }"
@@ -234,6 +239,17 @@ def test_single_property_results_whatif_ai_and_report_export(page, live_server, 
 
     page.locator('[data-results-view="details"]').click()
     assert page.locator("#resultsPanelDetails").is_visible()
+    assert page.get_by_role("columnheader", name="Gross Rent / Yr").is_visible()
+    assert page.get_by_role("columnheader", name="PM Expense / Yr").is_visible()
+    assert page.get_by_role("columnheader", name="One-Time Credits").is_visible()
+    assert page.get_by_role("columnheader", name="Unrealized ROI*").is_visible()
+    operating_expense_label = page.locator(".metric-card:has(#resTotalExp) .label")
+    assert operating_expense_label.is_visible()
+    assert "operating expenses (excl. p&i)" in operating_expense_label.inner_text().lower()
+    assert page.locator("#factorList .factor-category").count() == 2
+    assert "INCOME SAFETY" in page.locator("#factorList .factor-category").first.inner_text()
+    assert "10-YEAR PERFORMANCE" in page.locator("#factorList .factor-category").nth(1).inner_text()
+    assert page.locator("#projBody tr").first.locator("td").count() == 10
     page.get_by_role("button", name="Run AI Analysis").click()
     page.wait_for_function("document.querySelector('#aiOutput').textContent.includes('Controlled browser analysis')")
 
@@ -327,6 +343,8 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
         "year1_coc_pct": 11.733,
         "stabilized_coc_pct": 10.133,
         "monthly_rent": 1200,
+        "rental_status": "Leased",
+        "field_sources": {"monthly_rent": "brochure"},
         "beds": 3,
         "baths": 2,
         "sqft": 1168,
@@ -345,10 +363,39 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
                 "promotional_rate_pct": 5, "normal_rate_pct": 9,
                 "end_month": 12, "choice_group": None, "source": "brochure",
             },
+            {
+                "id": "incentive-3", "type": "rent_credit",
+                "label": "$900 one-time rent credit", "amount": 900,
+                "start_month": 1, "end_month": 12,
+                "choice_group": None, "source": "brochure",
+            },
+            {
+                "id": "incentive-4", "type": "closing_credit",
+                "label": "$6,900 closing credit", "amount": 6900,
+                "choice_group": None, "source": "brochure",
+            },
         ],
     }
     batch_payload = {"deals": [batch_deal], "count": 1, "sheet_name": "RTR Inventory"}
-    calls = open_app(page, live_server, {"/api/batch-review/import": batch_payload})
+    screened_deal = dict(batch_deal, **{
+        "zip_code": "35020", "market_status": "screened", "market_rent": 1350,
+        "market_rent_source": "rentcast_market", "market_rent_sample_size": 18,
+        "market_vacancy": {"rate_pct": 5.1},
+        "market_tax": {"annual": 858}, "market_insurance": {"annual": 1700},
+        "market_reserves": {"maintenance_pct": 7.0, "capex_pct": 6.0},
+        "market_screen": {
+            "monthly_cash_flow": 125, "cash_on_cash_pct": 3.7,
+            "cap_rate_pct": 6.8, "dscr": 1.12,
+        },
+    })
+    market_payload = {
+        "deals": [screened_deal], "screened_count": 1, "zip_count": 1,
+        "mortgage_rate": 6.5, "rentcast_usage": {"count": 8, "limit": 50},
+    }
+    calls = open_app(page, live_server, {
+        "/api/batch-review/import": batch_payload,
+        "/api/batch-review/enrich": market_payload,
+    })
 
     page.locator('[data-mode="smart"]').click()
     page.get_by_role("tab", name="Import Deal List").click()
@@ -363,6 +410,13 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
     assert "10.1%" in table_text
     assert "removes $48.00/mo PM promo" in table_text
 
+    page.get_by_role("button", name="Run ZIP Estimates").click()
+    page.locator("#batchResultsBody").get_by_text("3.7% CoC").wait_for()
+    assert "$1,350.00/mo" in page.locator("#batchResultsBody").inner_text()
+    assert "/100" in page.locator("#batchResultsBody").inner_text()
+    assert "Income" in page.locator("#batchResultsBody").inner_text()
+    assert "10yr" in page.locator("#batchResultsBody").inner_text()
+
     page.locator(".batch-incentive-select").select_option("incentive-1")
     assert "Selected cash to close: $26,000.00" in page.locator("#batchResultsBody").inner_text()
 
@@ -370,14 +424,30 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
         page.get_by_role("button", name="Export Review CSV").click()
     export_path = tmp_path / "batch.csv"
     download_info.value.save_as(export_path)
-    assert "Stabilized CoC" in export_path.read_text(encoding="utf-8")
+    exported_csv = export_path.read_text(encoding="utf-8")
+    assert "Stabilized CoC" in exported_csv
+    assert "Balanced Score" in exported_csv
+    assert "Income Safety Score" in exported_csv
+    assert "10-Year Performance Score" in exported_csv
 
-    page.get_by_role("button", name="Verify & Analyze →").click()
+    action_header = page.locator("#batchResultsTable th:last-child")
+    action_button = page.get_by_role("button", name="Verify & Analyze →")
+    assert action_header.evaluate("el => getComputedStyle(el).position") == "sticky"
+    assert action_button.is_visible()
+    action_button.click()
     page.locator("#step2.active").wait_for()
+    assert page.locator("#monthlyRent").input_value() == "$2,350"
+    assert "$2,350" in page.locator("#rentEstimateStats").inner_text()
     assert page.locator("#management").input_value() == "9"
+    applied_incentives = page.locator("#verifiedIncentiveList").text_content()
+    assert "$900.00 one-time rent credit added to Year 1 cash flow" in applied_incentives
+    assert "$6,900.00 closing credit applied only to eligible acquisition costs" in applied_incentives
     paths = [call["path"] for call in calls]
     assert "/api/batch-review/import" in paths
+    assert "/api/batch-review/enrich" in paths
     assert all(path in paths for path in ("/api/rent-estimate", "/api/tax-rate", "/api/appreciation"))
+    rent_call = next(call for call in calls if call["path"] == "/api/rent-estimate")
+    assert rent_call["json"]["prefer_rentcast"] is True
 
 
 def test_scenarios_compare_and_mobile_print_layout(page, live_server):

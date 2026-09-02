@@ -90,6 +90,10 @@
   var rentcastAllowOverage = false; // session-only: never persisted, so a
                                     // forgotten toggle can't run up a bill
   var rentcastLocalAutoContinue = false;
+  // Incentives carried from a verified batch brochure. They remain structured
+  // inputs so the pure engine can place each benefit in the correct period.
+  var activeDealIncentives = [];
+  var activeSellerClaim = null;
 
   // Investment properties are not owner-occupied, so conventional financing
   // typically requires 25% down rather than 20%. Used by the search-grid quick
@@ -104,12 +108,48 @@
     zillow: 'Zillow', redfin: 'Redfin', rentcast_avm: 'RentCast',
     rentcast_market: 'RentCast area', pdf: 'PDF', pdf_ai: 'PDF (AI)',
     screenshot_ai: 'Screenshot (AI)', estimated: 'Estimated', fhfa: 'FHFA',
-    seller_sheet: 'Seller sheet', brochure: 'Brochure'
+    seller_sheet: 'Seller sheet', brochure: 'Brochure', brochure_llm: 'Brochure (LLM)'
   };
 
   function markSource(field, source) {
     autoFilledFields[field] = true;
     fieldSources[field] = source;
+  }
+
+  function incentiveTreatment(item) {
+    if (!item) return '';
+    if (item.type === 'property_management_discount') {
+      var normalRate = item.normal_rate_pct === null || item.normal_rate_pct === undefined
+        ? 8 : item.normal_rate_pct;
+      return (item.promotional_rate_pct || 0) + '% PM through month '
+        + (item.end_month || 12) + '; ' + normalRate + '% stabilized afterward';
+    }
+    if (item.type === 'rent_credit') {
+      return fmtDollar(Number(item.amount) || 0) + ' one-time rent credit added to Year 1 cash flow';
+    }
+    if (item.type === 'closing_credit') {
+      return fmtDollar(Number(item.amount) || 0) + ' closing credit applied only to eligible acquisition costs';
+    }
+    if (item.type === 'cash_back' || item.type === 'unallocated_seller_funds') {
+      return fmtDollar(Number(item.amount) || 0) + ' selected seller funds reduce initial cash invested';
+    }
+    return item.label || item.type;
+  }
+
+  function renderActiveDealIncentives() {
+    var panel = $('verifiedIncentives');
+    var list = $('verifiedIncentiveList');
+    if (!panel || !list) return;
+    var treatments = activeDealIncentives.map(incentiveTreatment).filter(Boolean);
+    if (!treatments.length) {
+      panel.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    list.innerHTML = '<ul>' + treatments.map(function(line) {
+      return '<li>' + esc(line) + '</li>';
+    }).join('') + '</ul>';
+    panel.style.display = '';
   }
 
   // ======================================================================
@@ -731,6 +771,9 @@
     carryingRates = null;
     appreciationProfile = null;
     propertyTaxPolicy = null;
+    activeDealIncentives = [];
+    activeSellerClaim = null;
+    renderActiveDealIncentives();
     LOCATION_ASSUMPTION_FIELDS.forEach(function(field) {
       delete userEditedFields[field];
       delete autoFilledFields[field];
@@ -829,11 +872,17 @@
     updateDpHelper();
   }
 
-  async function refreshAutomaticAssumptions() {
+  async function refreshAutomaticAssumptions(options) {
+    options = options || {};
     // Rent first: it supplies vacancy and gives the reserve model the best
     // available rent denominator. The remaining independent lookups can run
     // together afterward.
-    await autoEstimateRent();
+    await autoEstimateRent(
+      false,
+      false,
+      !!options.preferRentcast,
+      !!options.preserveSeedRent
+    );
     await Promise.all([
       applyCarryingCostRates(true),
       applyAppreciation(true)
@@ -852,7 +901,7 @@
       return;
     }
 
-    await refreshAutomaticAssumptions();
+    await refreshAutomaticAssumptions(options);
     smartAnalyzeActive = false;
     goToStep(2);
   }
@@ -1299,6 +1348,7 @@
       showBatchStatus(
         'Imported ' + batchResults.length + ' deals'
         + (data.augmented_count ? ' and augmented ' + data.augmented_count + ' brochures' : '')
+        + (data.llm_augmented_count ? ' (' + data.llm_augmented_count + ' needed LLM fallback)' : '')
         + '. Seller claims remain separate from calculated screens.',
         false
       );
@@ -1315,7 +1365,7 @@
     var button = $('batchAugmentBtn');
     button.disabled = true;
     button.textContent = 'Reading brochures...';
-    showBatchStatus('Reading linked public Google Docs and extracting time-bound incentives...', false);
+    showBatchStatus('Reading linked public Google Docs; ambiguous brochures may use the configured LLM...', false);
     try {
       var response = await fetch('/api/batch-review/augment', {
         method: 'POST',
@@ -1331,6 +1381,7 @@
       sortAndRenderBatch();
       showBatchStatus(
         'Augmented ' + (data.augmented_count || 0) + ' brochures'
+        + (data.llm_augmented_count ? '; LLM fallback improved ' + data.llm_augmented_count : '')
         + (data.unavailable_count ? '; ' + data.unavailable_count + ' could not be read' : '') + '.',
         false
       );
@@ -1339,6 +1390,52 @@
     } finally {
       button.disabled = false;
       button.textContent = 'Augment Brochures';
+    }
+  };
+
+  window.runBatchMarketEstimates = async function(allowOverage) {
+    if (!batchResults.length) return;
+    var button = $('batchMarketBtn');
+    button.disabled = true;
+    button.textContent = 'Estimating by ZIP...';
+    showBatchStatus(
+      'Grouping deals by ZIP, preferring free Redfin rent data, and reusing cached RentCast market and tax records...',
+      false
+    );
+    try {
+      var response = await fetch('/api/batch-review/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deals: batchResults,
+          allow_overage: allowOverage || rentcastAllowOverage
+        })
+      });
+      var data = await response.json();
+      if (data.rentcast_usage) updateUsageDisplay(data.rentcast_usage);
+      if (data.quota_gate) {
+        showQuotaGate(data.quota_gate, function(ok) { runBatchMarketEstimates(ok); });
+      }
+      if (!response.ok || data.error) {
+        showBatchStatus(data.error || 'ZIP estimates failed.', true);
+        return;
+      }
+      batchResults = data.deals || batchResults;
+      batchSortCol = 'market_analysis.dealPoints';
+      batchSortAsc = false;
+      sortAndRenderBatch();
+      showBatchStatus(
+        'Screened ' + (data.screened_count || 0) + ' deals across '
+        + (data.zip_count || 0) + ' ZIP codes at '
+        + (data.mortgage_rate ? data.mortgage_rate.toFixed(2) + '%' : 'the current entered rate')
+        + '. Use Verify & Analyze for a property-specific RentCast estimate.',
+        false
+      );
+    } catch (error) {
+      showBatchStatus('Could not connect to the server.', true);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Run ZIP Estimates';
     }
   };
 
@@ -1358,16 +1455,83 @@
     return 'Unspecified claim';
   }
 
+  function activeBatchIncentives(deal) {
+    return (deal.incentives || []).filter(function(item) {
+      if (item.included_in_core === false || item.type === 'tax_estimate') return false;
+      if (item.choice_group === 'seller_funds') {
+        return item.id === deal.selected_incentive_id && item.type !== 'rate_buydown';
+      }
+      return item.type !== 'rate_buydown';
+    }).map(function(item) { return Object.assign({}, item); });
+  }
+
+  function refreshBatchMarketAnalysis(deal) {
+    var screen = deal.market_screen || {};
+    var rent = nullableNumber(deal.market_rent);
+    var price = nullableNumber(deal.price);
+    if (!price || !rent || deal.market_status !== 'screened') {
+      deal.market_analysis = null;
+      return;
+    }
+    var appreciation = deal.market_appreciation || {};
+    var reserves = deal.market_reserves || {};
+    var vacancy = deal.market_vacancy || {};
+    var tax = deal.market_tax || {};
+    var insurance = deal.market_insurance || {};
+    var fullAnalysis = computeDeal({
+      price: price, arv: price, closingCosts: price * 0.03, rehab: 0,
+      valueGrowthPct: nullableNumber(appreciation.conservative_pct) === null
+        ? 2.5 : Number(appreciation.conservative_pct),
+      isCash: false, dpPct: nullableNumber(screen.down_payment_pct) === null
+        ? 25 : Number(screen.down_payment_pct),
+      rate: nullableNumber(screen.mortgage_rate_pct) || 0,
+      termYears: 30, points: 0, totalRent: rent, otherIncome: 0,
+      incomeGrowthPct: 2, taxesYr: nullableNumber(tax.annual) || 0,
+      taxGrowthOverridePct: null,
+      propertyTaxPolicy: deal.market_tax_policy || null,
+      insuranceYr: nullableNumber(insurance.annual) || 0,
+      maintPct: nullableNumber(reserves.maintenance_pct) || 0,
+      vacPct: nullableNumber(vacancy.rate_pct) || 0,
+      capexPct: nullableNumber(reserves.capex_pct) || 0,
+      mgmtPct: nullableNumber(screen.management_pct) === null
+        ? 8 : Number(screen.management_pct),
+      hoaMonth: 0, utilMonth: 0, otherExpMonth: 0, expGrowthPct: 2,
+      sqft: nullableNumber(deal.sqft) || 0, buildingPct: 80,
+      sellingCostPct: 7, holdYears: 10, propertyType: 'sfh', unitCount: 1,
+      appreciationProfile: appreciation, projectionStartYear: new Date().getFullYear(),
+      incentives: activeBatchIncentives(deal)
+    });
+    // Keep only the score contract on each row. Persisting thirty projection
+    // years and a full amortization table on every batch item would bloat
+    // subsequent brochure/enrichment requests without adding information.
+    deal.market_analysis = {
+      dealPoints: fullAnalysis.dealPoints,
+      dealMaxPoints: fullAnalysis.dealMaxPoints,
+      dealGrade: fullAnalysis.dealGrade,
+      incomeSafetyScore: fullAnalysis.incomeSafetyScore,
+      holdPerformanceScore: fullAnalysis.holdPerformanceScore,
+      averageAnnualOperatingCoC: fullAnalysis.averageAnnualOperatingCoC,
+      cashPositiveYears: fullAnalysis.cashPositiveYears,
+      cashPositiveYearPct: fullAnalysis.cashPositiveYearPct,
+      preTaxIRR: fullAnalysis.preTaxIRR,
+      holdYears: fullAnalysis.holdYears
+    };
+  }
+
+  function refreshBatchMarketAnalyses() {
+    batchResults.forEach(refreshBatchMarketAnalysis);
+  }
+
   function renderBatchSummary() {
     var exact = batchResults.filter(function(d) { return d.address_quality === 'exact'; }).length;
     var promotional = batchResults.filter(function(d) { return d.roi_basis === 'first_year_promotional'; }).length;
     var augmented = batchResults.filter(function(d) { return d.brochure_status === 'augmented'; }).length;
-    var comparable = batchResults.filter(function(d) { return nullableNumber(d.stabilized_coc_pct) !== null; }).length;
+    var screened = batchResults.filter(function(d) { return d.market_status === 'screened'; }).length;
     $('batchSummaryStrip').innerHTML = [
       ['Deals', batchResults.length],
       ['Exact addresses', exact],
       ['Promotional ROI', promotional],
-      ['Comparable screens', comparable + (augmented ? ' · ' + augmented + ' brochures' : '')]
+      ['ZIP screened', screened + (augmented ? ' · ' + augmented + ' brochures' : '')]
     ].map(function(item) {
       return '<div class="batch-summary-item"><div class="label">' + esc(String(item[0]))
         + '</div><div class="value">' + esc(String(item[1])) + '</div></div>';
@@ -1423,6 +1587,30 @@
       var meta = [deal.deal_type, deal.asset_type, brochureLink].filter(Boolean).join(' · ');
       var gap = nullableNumber(deal.claimed_roi_pct) !== null && nullableNumber(deal.stabilized_coc_pct) !== null
         ? deal.claimed_roi_pct - deal.stabilized_coc_pct : null;
+      var market = deal.market_screen || {};
+      var analysis = deal.market_analysis || {};
+      var rentSource = deal.market_rent_source === 'redfin' ? 'Redfin rentals'
+        : deal.market_rent_source === 'rentcast_market' ? 'RentCast ZIP' : '';
+      var marketRentHtml = deal.market_rent
+        ? '<strong>' + fmtDollar(deal.market_rent) + '/mo</strong><div class="batch-deal-meta">'
+          + esc(rentSource) + (deal.market_rent_sample_size ? ' · n=' + deal.market_rent_sample_size : '') + '</div>'
+        : '<span class="batch-deal-meta">Run ZIP Estimates</span>';
+      var marketScreenHtml = market.cash_on_cash_pct !== null && market.cash_on_cash_pct !== undefined
+        ? '<strong>' + batchPct(market.cash_on_cash_pct) + ' CoC</strong>'
+          + '<div class="batch-deal-meta">' + fmtDollar(market.monthly_cash_flow) + '/mo · '
+          + batchPct(market.cap_rate_pct) + ' cap'
+          + (market.dscr !== null && market.dscr !== undefined ? ' · ' + market.dscr.toFixed(2) + ' DSCR' : '') + '</div>'
+          + '<div class="batch-deal-meta">Tax ' + fmtDollar((deal.market_tax || {}).annual || 0) + '/yr · vacancy '
+          + batchPct((deal.market_vacancy || {}).rate_pct) + ' · reserves '
+          + batchPct(((deal.market_reserves || {}).maintenance_pct || 0) + ((deal.market_reserves || {}).capex_pct || 0)) + '</div>'
+        : '<span class="batch-deal-meta">Not screened</span>';
+      var balancedScoreHtml = analysis.dealPoints !== null && analysis.dealPoints !== undefined
+        ? '<strong class="balanced-score ' + esc(analysis.dealGrade || '') + '">'
+          + analysis.dealPoints + '/100</strong>'
+          + '<div class="batch-deal-meta">Income ' + analysis.incomeSafetyScore
+          + ' · 10yr ' + analysis.holdPerformanceScore + '</div>'
+          + '<div class="batch-deal-meta">ZIP market-screen estimate</div>'
+        : '<span class="batch-deal-meta">Run ZIP Estimates</span>';
       html += '<tr>'
         + '<td><div class="batch-deal-name">' + esc(deal.address || '—') + '</div>'
         + (meta ? '<div class="batch-deal-meta">' + meta + '</div>' : '')
@@ -1437,13 +1625,16 @@
         + '<td><strong>' + batchPct(deal.stabilized_coc_pct) + '</strong>'
         + (deal.temporary_pm_uplift_monthly
           ? '<div class="batch-deal-meta">removes ' + fmtDollar(deal.temporary_pm_uplift_monthly) + '/mo PM promo</div>' : '') + '</td>'
+        + '<td>' + marketRentHtml + '</td>'
+        + '<td>' + marketScreenHtml + '</td>'
+        + '<td>' + balancedScoreHtml + '</td>'
         + '<td>' + incentiveHtml + '</td>'
         + '<td><span class="confidence-badge ' + esc(deal.confidence || 'low') + '">' + esc(deal.confidence || 'low') + '</span>'
         + '<div class="batch-deal-meta">' + (deal.address_quality === 'exact' ? 'property-ready' : 'market-only') + '</div></td>'
-        + '<td><button class="btn" type="button" onclick="analyzeFromBatch(' + index + ')">Verify &amp; Analyze &rarr;</button></td>'
+        + '<td><button class="btn batch-analyze-btn" type="button" onclick="analyzeFromBatch(' + index + ')">Verify &amp; Analyze &rarr;</button></td>'
         + '</tr>';
     });
-    if (!html) html = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-muted);">No priced deals were found.</td></tr>';
+    if (!html) html = '<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--text-muted);">No priced deals were found.</td></tr>';
     $('batchResultsBody').innerHTML = html;
   }
 
@@ -1462,13 +1653,16 @@
     } else if (selected && selected.type === 'rate_buydown') {
       deal.selected_incentive_note = 'Rate schedule required in Full Analysis';
     }
+    refreshBatchMarketAnalysis(deal);
     renderBatchResults();
   };
 
   function sortAndRenderBatch() {
+    refreshBatchMarketAnalyses();
     batchResults.sort(function(a, b) {
-      var va = a[batchSortCol];
-      var vb = b[batchSortCol];
+      var nested = batchSortCol.split('.');
+      var va = nested.reduce(function(value, key) { return value && value[key]; }, a);
+      var vb = nested.reduce(function(value, key) { return value && value[key]; }, b);
       if (batchSortCol === 'address') {
         va = String(va || '').toLowerCase();
         vb = String(vb || '').toLowerCase();
@@ -1503,6 +1697,10 @@
   window.analyzeFromBatch = async function(index) {
     var deal = batchResults[index];
     if (!deal) return;
+    var rentSource = (deal.field_sources || {}).monthly_rent;
+    var hasVerifiedLeaseRent = deal.lease_verified === true && !!deal.monthly_rent
+      && (rentSource === 'brochure' || rentSource === 'brochure_llm')
+      && /\b(?:leased|occupied)\b/i.test(deal.rental_status || '');
     var listing = {
       address: deal.address,
       price: deal.price,
@@ -1512,17 +1710,40 @@
       yearBuilt: deal.year_built,
       propertyType: deal.asset_type,
       estRent: deal.monthly_rent,
-      rentSource: deal.monthly_rent ? 'brochure' : null,
+      rentSource: deal.monthly_rent ? (rentSource || 'seller_sheet') : null,
       source: 'seller_sheet'
     };
-    await analyzeListing(listing, { source: 'seller_sheet', estimatedRent: deal.monthly_rent });
-    var pm = (deal.incentives || []).find(function(item) {
-      return item.type === 'property_management_discount' && item.normal_rate_pct !== null;
+    await analyzeListing(listing, {
+      source: 'seller_sheet',
+      estimatedRent: deal.monthly_rent,
+      preferRentcast: deal.address_quality === 'exact',
+      preserveSeedRent: hasVerifiedLeaseRent
     });
-    if (pm && !userEditedFields.management) {
-      $('management').value = pm.normal_rate_pct;
+    activeDealIncentives = activeBatchIncentives(deal);
+    var pm = activeDealIncentives.find(function(item) {
+      return item.type === 'property_management_discount';
+    });
+    if (pm) {
+      $('management').value = pm.normal_rate_pct === null || pm.normal_rate_pct === undefined
+        ? 8 : pm.normal_rate_pct;
+      userEditedFields.management = false;
       markSource('management', pm.source === 'brochure' ? 'brochure' : 'estimated');
+    } else {
+      var stabilizedManagement = nullableNumber(
+        deal.market_screen && deal.market_screen.management_pct
+      );
+      $('management').value = stabilizedManagement === null ? 8 : stabilizedManagement;
+      userEditedFields.management = false;
+      markSource('management', 'estimated');
     }
+    activeSellerClaim = {
+      monthly_cash_flow: nullableNumber(deal.claimed_monthly_cash_flow),
+      annual_cash_flow: nullableNumber(deal.claimed_monthly_cash_flow) === null
+        ? null : nullableNumber(deal.claimed_monthly_cash_flow) * 12,
+      monthly_rent: nullableNumber(deal.monthly_rent),
+      source: deal.brochure_status === 'augmented' ? 'brochure' : 'seller_sheet'
+    };
+    renderActiveDealIncentives();
     calculate();
   };
 
@@ -1531,15 +1752,33 @@
     var rows = [[
       'Address', 'Price', 'Seller ROI', 'ROI Basis', 'Claimed Monthly Cash Flow',
       'Initial Cash', 'Year-1 CoC', 'Stabilized Monthly Cash Flow',
-      'Stabilized CoC', 'Address Quality', 'Confidence', 'Incentives', 'Warnings',
-      'Brochure URL'
+      'Stabilized CoC', 'ZIP', 'Market Rent', 'Market Rent Source',
+      'Market Monthly Cash Flow', 'Market CoC', 'Market Cap Rate', 'Market DSCR',
+      'Balanced Score', 'Income Safety Score', '10-Year Performance Score',
+      'Avg Annual Operating CoC', 'Cash-Flow Positive Years', '10-Year Pre-Tax IRR',
+      'Annual Property Tax', 'Annual Insurance', 'Vacancy', 'Maintenance', 'CapEx',
+      'Address Quality', 'Confidence', 'Incentives', 'Warnings', 'Brochure URL'
     ]];
     batchResults.forEach(function(deal) {
       rows.push([
         deal.address, deal.price, deal.claimed_roi_pct, deal.roi_basis,
         deal.claimed_monthly_cash_flow, deal.claimed_initial_cash,
         deal.year1_coc_pct, deal.stabilized_monthly_cash_flow,
-        deal.stabilized_coc_pct, deal.address_quality, deal.confidence,
+        deal.stabilized_coc_pct, deal.zip_code, deal.market_rent,
+        deal.market_rent_source, (deal.market_screen || {}).monthly_cash_flow,
+        (deal.market_screen || {}).cash_on_cash_pct,
+        (deal.market_screen || {}).cap_rate_pct, (deal.market_screen || {}).dscr,
+        (deal.market_analysis || {}).dealPoints,
+        (deal.market_analysis || {}).incomeSafetyScore,
+        (deal.market_analysis || {}).holdPerformanceScore,
+        (deal.market_analysis || {}).averageAnnualOperatingCoC,
+        (deal.market_analysis || {}).cashPositiveYears,
+        (deal.market_analysis || {}).preTaxIRR,
+        (deal.market_tax || {}).annual, (deal.market_insurance || {}).annual,
+        (deal.market_vacancy || {}).rate_pct,
+        (deal.market_reserves || {}).maintenance_pct,
+        (deal.market_reserves || {}).capex_pct,
+        deal.address_quality, deal.confidence,
         (deal.incentives || []).map(function(item) { return item.label; }).join('; '),
         (deal.warnings || []).join('; '), deal.brochure_url || ''
       ]);
@@ -1835,7 +2074,7 @@
   // ======================================================================
   // Rent estimate helpers
   // ======================================================================
-  function rentEstimateBody(location, allowOverage, skipRentcast) {
+  function rentEstimateBody(location, allowOverage, skipRentcast, preferRentcast) {
     return {
       location: location,
       address: (scrapedData && scrapedData.address) || $('propName').value.trim() || '',
@@ -1844,7 +2083,8 @@
       sqft: val($('sqft'), 0) || (scrapedData && scrapedData.sqft) || null,
       property_type: (scrapedData && scrapedData.propertyType) || null,
       allow_overage: allowOverage || rentcastAllowOverage,
-      skip_rentcast: !!skipRentcast
+      skip_rentcast: !!skipRentcast,
+      prefer_rentcast: !!preferRentcast
     };
   }
 
@@ -1866,9 +2106,9 @@
     if (typeof calculate === 'function') calculate();
   }
 
-  function applyRentEstimate(est, comps) {
+  function applyRentEstimate(est, comps, preserveCurrentRent) {
     if (!est || !est.rent) return;
-    if (!userEditedFields['monthlyRent']) {
+    if (!preserveCurrentRent && !userEditedFields['monthlyRent']) {
       $('monthlyRent').value = est.rent;
       markSource('monthlyRent', est.source || 'rentcast_avm');
     }
@@ -1886,7 +2126,9 @@
     }
     $('rentEstimateStats').innerHTML = html;
     $('rentEstimateLocation').textContent = est.label || '';
-    var note = est.source === 'rentcast_avm'
+    var note = preserveCurrentRent
+      ? 'Leased brochure rent retained as the underwriting input. This property-specific market estimate is shown for comparison.'
+      : est.source === 'rentcast_avm'
       ? 'Property-specific model estimate. Check that it still cash-flows at the low end.'
       : est.source === 'redfin'
         ? 'Free estimate from' + (est.sample_size ? ' ' + est.sample_size : '')
@@ -1907,7 +2149,7 @@
   }
 
   // Fires automatically on Analyze so rent is never a manual step.
-  async function autoEstimateRent(allowOverage, skipRentcast) {
+  async function autoEstimateRent(allowOverage, skipRentcast, preferRentcast, preserveCurrentRent) {
     if (userEditedFields['monthlyRent']) return;
     var address = (scrapedData && scrapedData.address) || $('propName').value.trim();
     if (!address) return;
@@ -1915,24 +2157,24 @@
     var location = zipM ? zipM[0] : address;
     try {
       var result = await requestRentEstimate(
-        rentEstimateBody(location, allowOverage, skipRentcast)
+        rentEstimateBody(location, allowOverage, skipRentcast, preferRentcast)
       );
       var resp = result.resp;
       var data = result.data;
       if (data.usage) updateUsageDisplay(data.usage);
       if (!resp.ok || data.error) return;
       if (data.quota_gate) {
-        if (data.estimate) applyRentEstimate(data.estimate, data.comparables);
+        if (data.estimate) applyRentEstimate(data.estimate, data.comparables, preserveCurrentRent);
         if (data.vacancy) applyVacancy(data.vacancy);
         showQuotaGate(
           data.quota_gate,
-          function(ok) { autoEstimateRent(ok, false); },
-          function() { autoEstimateRent(false, true); }
+          function(ok) { autoEstimateRent(ok, false, preferRentcast, preserveCurrentRent); },
+          function() { autoEstimateRent(false, true, false, preserveCurrentRent); }
         );
         return;
       }
       if (data.vacancy) applyVacancy(data.vacancy);
-      if (data.estimate) applyRentEstimate(data.estimate, data.comparables);
+      if (data.estimate) applyRentEstimate(data.estimate, data.comparables, preserveCurrentRent);
     } catch (err) { /* silent: the field keeps whatever it had */ }
   }
 
@@ -2124,7 +2366,8 @@
       // Passed in rather than read from the module global, so a computed deal
       // is fully determined by its inputs.
       appreciationProfile: appreciationProfile,
-      projectionStartYear: new Date().getFullYear()
+      projectionStartYear: new Date().getFullYear(),
+      incentives: activeDealIncentives.map(function(item) { return Object.assign({}, item); })
     };
   }
 
@@ -2185,6 +2428,37 @@
     setMetricColor('resCoC', fmtPct(r.coc), r.coc);
     setMetricText('resCapRate', fmtPct(r.capRate));
     setMetricText('res5yrROI', fmtPct(r.preTaxAnnualizedROI));
+
+    var resultsIncentives = $('resultsIncentives');
+    if (resultsIncentives && r.incentives && r.incentives.length) {
+      var incentiveLines = [];
+      if (r.closingCreditOffered > 0) {
+        incentiveLines.push(
+          fmtDollar(r.closingCreditApplied) + ' of ' + fmtDollar(r.closingCreditOffered)
+          + ' closing credit applied to eligible costs'
+          + (r.closingCreditUnused > 0 ? '; ' + fmtDollar(r.closingCreditUnused) + ' remains unapplied' : '')
+        );
+      }
+      if (r.cashBackApplied > 0) {
+        incentiveLines.push(fmtDollar(r.cashBackApplied) + ' selected seller funds reduce initial cash invested');
+      }
+      if (r.rentCredit > 0) {
+        incentiveLines.push(fmtDollar(r.rentCredit) + ' rent credit included once in Year 1');
+      }
+      var totalPmSavings = r.projRows.reduce(function(total, row) {
+        return total + (row.pmIncentiveSavings || 0);
+      }, 0);
+      if (totalPmSavings > 0) {
+        incentiveLines.push(fmtDollar(totalPmSavings) + ' total PM savings across the promotional period');
+      }
+      resultsIncentives.innerHTML = '<strong>Applied brochure incentives</strong><ul>'
+        + incentiveLines.map(function(line) { return '<li>' + esc(line) + '</li>'; }).join('')
+        + '</ul><p>Headline monthly cash flow and NOI remain stabilized. The projection and IRR include benefits only in their applicable periods.</p>';
+      resultsIncentives.style.display = '';
+    } else if (resultsIncentives) {
+      resultsIncentives.style.display = 'none';
+      resultsIncentives.innerHTML = '';
+    }
 
     // B) Quick Rules
     $('rule1Badge').textContent = r.onePercentPass ? 'PASS' : 'FAIL';
@@ -2250,6 +2524,9 @@
       { label: 'Debt Paydown', val: r.totalReturnDebtPaydown },
       { label: 'Closing, rehab & points', val: -(r.closingCosts + r.rehab + r.pointsCost) }
     ];
+    if (r.acquisitionCredits > 0) {
+      pillars.push({ label: 'Applied seller acquisition credits', val: r.acquisitionCredits });
+    }
     pillars.forEach(function(p) {
       var valClass = p.val >= 0 ? 'positive' : 'negative';
       // The base case is conservative by design, so the historical figure sits
@@ -2283,7 +2560,16 @@
     // Factor scorecard
     var factorHtml = '';
     var factorIcons = { strong: '\u2713', ok: '\u2013', weak: '\u2717' };
+    var factorCategory = null;
     r.dealFactors.forEach(function(f) {
+      if (f.category !== factorCategory) {
+        factorCategory = f.category;
+        factorHtml += '<div class="factor-category">'
+          + (factorCategory === 'income'
+            ? 'Income Safety · ' + r.incomeSafetyScore + '/100'
+            : (r.holdYears || 10) + '-Year Performance · ' + r.holdPerformanceScore + '/100')
+          + '</div>';
+      }
       var icon = factorIcons[f.verdict] || '';
       factorHtml += '<div class="factor-row"><div class="factor-dot ' + f.verdict + '" title="' + f.verdict + '">' + icon + '</div><div class="factor-name">' + f.name + '</div><div class="factor-val">' + f.value + '</div><div class="factor-reason">' + f.reason + '</div></div>';
     });
@@ -2311,11 +2597,33 @@
     // E) Projection — projRows always runs 30 years for the what-if page, so
     // trim it to the holding period actually being analysed.
     var projBody = $('projBody');
+    var projectionNote = $('projectionContextNote');
+    if (projectionNote && activeSellerClaim && activeSellerClaim.monthly_cash_flow !== null) {
+      projectionNote.innerHTML = 'Seller claim: <strong>'
+        + fmtDollar(activeSellerClaim.monthly_cash_flow) + '/mo cash flow</strong>'
+        + (activeSellerClaim.monthly_rent !== null
+          ? ' on ' + fmtDollar(activeSellerClaim.monthly_rent) + '/mo stated rent' : '')
+        + '. The table below recalculates rent, PM, expenses, financing, and timed credits independently.';
+      projectionNote.style.display = 'block';
+    } else if (projectionNote) {
+      projectionNote.style.display = 'none';
+      projectionNote.innerHTML = '';
+    }
     projBody.innerHTML = '';
     r.projRows.slice(0, r.holdYears || 5).forEach(function(row) {
       var tr = document.createElement('tr');
       var cfClass = row.cf >= 0 ? 'positive' : 'negative';
-      tr.innerHTML = '<td>' + row.year + '</td><td class="' + cfClass + '">' + fmtDollar(row.cf) + '</td><td>' + fmtDollar(row.propertyTax) + '</td><td>' + fmtDollar(row.propVal) + '</td><td>' + fmtDollar(row.loanBal) + '</td><td>' + fmtDollar(row.equity) + '</td><td>' + fmtPct(row.cumROI) + '</td>';
+      var pmDetail = fmtDollar(row.managementExpense)
+        + (row.pmIncentiveSavings > 0
+          ? '<div class="batch-deal-meta">' + fmtDollar(row.pmIncentiveSavings) + ' promo savings</div>' : '');
+      tr.innerHTML = '<td>' + row.year + '</td>'
+        + '<td>' + fmtDollar(row.rentIncome) + '</td>'
+        + '<td>' + pmDetail + '</td>'
+        + '<td>' + (row.oneTimeCredits > 0 ? fmtDollar(row.oneTimeCredits) : '—') + '</td>'
+        + '<td class="' + cfClass + '">' + fmtDollar(row.cf) + '</td>'
+        + '<td>' + fmtDollar(row.propertyTax) + '</td><td>' + fmtDollar(row.propVal)
+        + '</td><td>' + fmtDollar(row.loanBal) + '</td><td>' + fmtDollar(row.equity)
+        + '</td><td>' + fmtPct(row.cumROI) + '</td>';
       projBody.appendChild(tr);
     });
 
@@ -2515,7 +2823,7 @@
     { key: 'hoaMonth',        group: 'opex',     label: 'HOA',            rel: [0, 2], floorMax: 600, step: 25, fmt: 'money' },
     { key: 'utilMonth',       group: 'opex',     label: 'Utilities',      rel: [0, 2], floorMax: 500, step: 25, fmt: 'money' },
     { key: 'otherExpMonth',   group: 'opex',     label: 'Other expenses', rel: [0, 2], floorMax: 500, step: 25, fmt: 'money' },
-    { key: 'expGrowthPct',    group: 'opex',     label: 'Expense growth', abs: [0, 8],    step: 0.25, fmt: 'pct' },
+    { key: 'expGrowthPct',    group: 'opex',     label: 'Fixed-expense growth', abs: [0, 8], step: 0.25, fmt: 'pct' },
 
     // Wide enough to reach this ZIP's own Downturn scenario, which runs past
     // -10%/yr in the weaker markets, and matching what readInputs() accepts.
@@ -2980,8 +3288,18 @@
     html += reviewItem('HOA', fmtDollar(val($('hoa'), 0)) + '/mo' + badge('hoa'));
     html += reviewItem('Utilities', fmtDollar(val($('utilities'), 0)) + '/mo');
     html += reviewItem('Other Expenses', fmtDollar(val($('otherExpenses'), 0)) + '/mo');
-    html += reviewItem('Expense Growth', val($('expenseGrowth'), 0) + '%/yr');
+    html += reviewItem('Fixed-Expense Growth', val($('expenseGrowth'), 0) + '%/yr');
     html += '</div></div>';
+
+    if (activeDealIncentives.length) {
+      html += '<div class="review-section">';
+      html += '<div class="review-header"><h3>Brochure Incentives</h3></div>';
+      html += '<div class="review-grid">';
+      activeDealIncentives.forEach(function(item) {
+        html += reviewItem(item.label || item.type, esc(incentiveTreatment(item)));
+      });
+      html += '</div><p class="usage-note" style="display:block;">One-time benefits are separated from stabilized operating performance.</p></div>';
+    }
 
     content.innerHTML = html;
   }
@@ -3024,7 +3342,9 @@
     if (r.pricePerSqft !== null) m += 'Price/Sqft: ' + fmtDollar(r.pricePerSqft) + ', Rent/Sqft: $' + fmt(r.rentPerSqft) + '\n';
     m += '\n' + r.holdYears + '-Year Pre-Tax Profit: ' + fmtDollar(r.preTaxProfit) + '\n';
     m += '  Cash Flow: ' + fmtDollar(r.totalReturnCF) + ', Appreciation after selling costs: ' + fmtDollar(r.appreciationAfterSellingCosts) + '\n';
-    m += '  Debt Paydown: ' + fmtDollar(r.totalReturnDebtPaydown) + ', Upfront closing/rehab/points: -' + fmtDollar(r.closingCosts + r.rehab + r.pointsCost) + '\n';
+    m += '  Debt Paydown: ' + fmtDollar(r.totalReturnDebtPaydown)
+      + ', Upfront closing/rehab/points: -' + fmtDollar(r.closingCosts + r.rehab + r.pointsCost)
+      + (r.acquisitionCredits > 0 ? ', Applied seller credits: +' + fmtDollar(r.acquisitionCredits) : '') + '\n';
     m += 'Annualized Pre-Tax ROI: ' + fmtPct(r.preTaxAnnualizedROI) + '\n';
     m += 'Pre-Tax IRR: ' + (r.preTaxIRR !== null ? fmtPct(r.preTaxIRR) : 'N/A') + '\n';
     m += 'Deal Score: ' + r.dealText + ' (' + r.dealPoints + '/' + r.dealMaxPoints + ' points)\n';
@@ -3241,7 +3561,12 @@
     var name = $('propName').value.trim() || prompt('Name this scenario:');
     if (!name) return;
     var scenarios = getSavedScenarios();
-    var data = { propertyType: propertyType, propertyTaxPolicy: propertyTaxPolicy };
+    var data = {
+      propertyType: propertyType,
+      propertyTaxPolicy: propertyTaxPolicy,
+      _incentives: activeDealIncentives.map(function(item) { return Object.assign({}, item); }),
+      _sellerClaim: activeSellerClaim ? Object.assign({}, activeSellerClaim) : null
+    };
     SAVE_FIELDS.forEach(function(f) {
       var el = $(f);
       if (el) {
@@ -3301,6 +3626,10 @@
     if (!data) return;
     // Set property type
     if (data.propertyType) setPropertyType(data.propertyType);
+    activeDealIncentives = Array.isArray(data._incentives)
+      ? data._incentives.map(function(item) { return Object.assign({}, item); }) : [];
+    activeSellerClaim = data._sellerClaim ? Object.assign({}, data._sellerClaim) : null;
+    renderActiveDealIncentives();
     // Fill fields
     SAVE_FIELDS.forEach(function(f) {
       var el = $(f);
@@ -3368,7 +3697,7 @@
       { key: 'preTaxProfit', label: 'Pre-Tax Profit', fmt: fmtDollar, higher: true },
       { key: 'preTaxAnnualizedROI', label: 'Annualized Pre-Tax ROI', fmt: fmtPct, higher: true },
       { key: 'preTaxIRR', label: 'Pre-Tax IRR', fmt: fmtPct, higher: true },
-      { key: 'dealPoints', label: 'Deal Score', fmt: function(v, d) { return v + '/' + (d.dealMaxPoints || 14); }, higher: true }
+      { key: 'dealPoints', label: 'Balanced Score', fmt: function(v, d) { return v + '/' + (d.dealMaxPoints || 100); }, higher: true }
     ];
 
     var html = '<table class="compare-table"><thead><tr><th>Metric</th>';
@@ -3454,13 +3783,13 @@
     'noi': ['Net Operating Income: annual rent minus operating expenses, before any mortgage payment. The basis for cap rate and DSCR.', IP + 'n/noi.asp'],
     'monthly mortgage (p&i)': ['Principal and interest only — the loan payment itself, excluding taxes, insurance and HOA.', IP + 'p/principal.asp'],
     'monthly piti': ['Principal, Interest, Taxes and Insurance — the full monthly housing payment a lender counts.', IP + 'p/piti.asp'],
-    'total monthly expenses': ['Operating costs: vacancy, maintenance, CapEx, management, HOA and utilities. Excludes the mortgage.', 'https://en.wikipedia.org/wiki/Operating_expense'],
+    'operating expenses (excl. p&i)': ['Property tax, insurance, vacancy, maintenance, CapEx, management, HOA, utilities and other operating costs. Excludes mortgage principal and interest. Tax and insurance also appear inside PITI, so do not add these two cards together.', 'https://en.wikipedia.org/wiki/Operating_expense'],
     'gross rent multiplier': ['Price divided by annual gross rent. A rough price-to-rent yardstick; lower is cheaper relative to income.', 'https://en.wikipedia.org/wiki/Gross_rent_multiplier'],
     'break-even occupancy': ['The share of the year the unit must be rented just to cover all costs. Above 100% means it cannot break even even fully occupied.', IP + 'b/breakevenpoint.asp'],
     'dscr': ['Debt-Service Coverage Ratio: NOI divided by annual debt payments. Below 1.0 means income does not cover the loan; most lenders want 1.20+.', IP + 'd/dscr.asp'],
     'total cash to close': ['Everything you must bring on day one: down payment, closing costs, points and rehab budget.', IP + 'c/closingcosts.asp'],
     'operating expense ratio': ['Operating expenses as a share of gross income. Higher means more of each rent dollar is consumed by running the property.', IP + 'o/operating-expense-ratio.asp'],
-    'cf per unit (monthly)': ['Monthly cash flow divided by the number of units — lets you compare a duplex against a single-family house fairly.', IP + 'c/cashflow.asp'],
+    'stabilized cf / unit (monthly)': ['Stabilized monthly cash flow divided by unit count. It uses the normal recurring management rate and excludes temporary PM promotions and one-time rent credits.', IP + 'c/cashflow.asp'],
     'rough annual depreciation': ['Optional tax context only. This shortcut uses the entered building allocation and does not change any underwriting return.', 'https://www.irs.gov/publications/p527'],
     'price / sqft': ['Purchase price divided by living area. Useful for comparing against nearby sales.', IP + 'r/realestate.asp'],
     'rent / sqft': ['Monthly rent divided by living area. Small units almost always command more per square foot than large ones.', IP + 'r/realestate.asp'],
@@ -3494,7 +3823,7 @@
     'pre-tax profit': ['All modeled operating cash flow and sale proceeds less the full initial cash investment. It includes selling costs but excludes income taxes.', IP + 'r/returnoninvestment.asp'],
     'property value growth (%/yr)': ['Assumed yearly appreciation. Speculative — a deal that only works on appreciation is a bet, not a rental business.', IP + 'a/appreciation.asp'],
     'annual income growth (%)': ['Assumed yearly rent increase.', null],
-    'annual expense growth (%)': ['Assumed yearly cost inflation. If it outpaces rent growth, cash flow erodes over time.', null],
+    'annual fixed-expense growth (%)': ['Yearly inflation applied only to insurance, HOA, utilities, and other fixed expenses. Maintenance, vacancy, CapEx, and management already move with projected rent; property tax follows its separate policy.', null],
     'cash flow': ['Cumulative rent left after all costs across the holding period.', IP + 'c/cashflow.asp'],
     'appreciation': ['Gain from the property rising in value. Not realised until you sell or refinance.', IP + 'a/appreciation.asp'],
     'debt paydown': ['Equity built as tenants pay down your loan principal.', IP + 'a/amortization.asp'],

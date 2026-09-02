@@ -5,7 +5,7 @@ import json
 
 from bs4 import BeautifulSoup
 
-from providers import estimates, page_fetch, rentcast, upload, zillow
+from providers import estimates, page_fetch, redfin, rentcast, upload, zillow
 from providers.base import TTLCache, extract_zip
 
 
@@ -68,6 +68,20 @@ def test_market_rent_scales_by_bedroom_and_size_without_leaving_observed_range()
     assert oversized["rent"] == 2900
     assert normal["sample_size"] == 18
     assert normal["days_on_market"] == 24
+
+
+def test_redfin_rentals_reject_flexible_mismatches_and_use_true_median():
+    rentals = [
+        {"address": "Relevant A", "rent": 2100, "beds": 3, "baths": 2, "sqft": 1580},
+        {"address": "Relevant B", "rent": 1850, "beds": 3, "baths": 1, "sqft": 1113},
+        {"address": "Wrong bedroom", "rent": 1100, "beds": 2, "baths": 1},
+        {"address": "Wrong bedroom 2", "rent": 800, "beds": 1, "baths": 1},
+    ]
+
+    qualified = redfin._qualify_redfin_rentals(rentals, beds=3, sqft=1160)
+
+    assert [item["rent"] for item in qualified] == [2100, 1850]
+    assert redfin._median_rent([item["rent"] for item in qualified]) == 1975
 
 
 def test_cache_persists_and_expires(monkeypatch, tmp_path):

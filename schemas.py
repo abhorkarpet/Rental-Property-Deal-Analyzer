@@ -30,3 +30,8 @@ class BatchImportRequest(BaseModel):
 
 class BatchAugmentRequest(BaseModel):
     deals: list[dict] = Field(default_factory=list, max_length=200)
+
+
+class BatchEnrichRequest(BaseModel):
+    deals: list[dict] = Field(default_factory=list, max_length=200)
+    allow_overage: bool = False

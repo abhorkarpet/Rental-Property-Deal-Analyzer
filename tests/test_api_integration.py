@@ -1,5 +1,6 @@
 """HTTP contract and fallback tests for the FastAPI application."""
 
+import asyncio
 from types import SimpleNamespace
 
 import app as app_module
@@ -11,6 +12,8 @@ def test_frontend_and_static_assets_share_the_current_version(client):
     assert response.status_code == 200
     assert f'window.__APP_VERSION__="{app_module.APP_VERSION}"' in response.text
     assert f'id="appVersion">v{app_module.APP_VERSION}</div>' in response.text
+    assert f'static/css/app.css?v={app_module.APP_VERSION}' in response.text
+    assert f'static/js/app.js?v={app_module.APP_VERSION}' in response.text
     for path in ("/static/css/app.css", "/static/js/deal-engine.js", "/static/js/app.js"):
         assert client.get(path).status_code == 200
 
@@ -221,8 +224,9 @@ def test_rentcast_quota_continuation_does_not_trip_route_limiter(client, monkeyp
 
 
 def test_rent_estimate_prefers_free_redfin_without_rentcast(client, monkeypatch):
-    async def fake_rentals(location, beds):
+    async def fake_rentals(location, beds, **kwargs):
         assert (location, beds) == ("78701", 2)
+        assert kwargs == {"property_type": None, "sqft": None}
         return {
             "rentals": [{"address": "Rental 1", "rent": 2100}],
             "stats": {
@@ -248,7 +252,7 @@ def test_rent_estimate_prefers_free_redfin_without_rentcast(client, monkeypatch)
 def test_local_redfin_rent_fills_missing_vacancy_from_zip_cache(client, monkeypatch):
     captured = {}
 
-    async def fake_rentals(location, beds):
+    async def fake_rentals(location, beds, **_kwargs):
         assert (location, beds) == ("95356", 4)
         return {
             "rentals": [{"address": "Redfin comp", "rent": 2800}],
@@ -357,7 +361,7 @@ def test_rent_estimate_free_choice_bypasses_configured_rentcast(client, monkeypa
     async def unexpected_avm(*_args, **_kwargs):
         raise AssertionError("RentCast must not be called after the free choice")
 
-    async def fake_rentals(location, beds):
+    async def fake_rentals(location, beds, **_kwargs):
         assert (location, beds) == ("95356", 4)
         return {
             "rentals": [{"address": "Free fallback comp", "rent": 2800}],
@@ -535,3 +539,30 @@ def test_pdf_upload_and_ai_provider_contracts(client, monkeypatch):
     )
     assert ai_response.status_code == 200
     assert ai_response.json()["provider"] == "ollama"
+
+
+def test_brochure_llm_parser_requests_strict_source_grounded_json(monkeypatch):
+    captured = {}
+
+    async def fake_ollama(prompt, model_override=None, **kwargs):
+        captured.update(prompt=prompt, model=model_override, kwargs=kwargs)
+        return """```json
+        {"fields":{"monthly_rent":1750},"incentives":[],"ambiguities":[]}
+        ```"""
+
+    monkeypatch.setenv("BROCHURE_LLM_PARSER", "fallback")
+    monkeypatch.setenv("BROCHURE_LLM_MODEL", "parser-model")
+    monkeypatch.setattr(app_module, "_resolve_provider", lambda: ("ollama", None))
+    monkeypatch.setattr(app_module, "_analyze_with_ollama", fake_ollama)
+
+    result = asyncio.run(app_module._parse_brochure_with_llm(
+        "The monthly lease amount is $1,750.",
+        {"monthly_rent": None, "incentives": [], "warnings": []},
+    ))
+
+    assert result["fields"]["monthly_rent"] == 1750
+    assert result["provider"] == "ollama"
+    assert captured["model"] == "parser-model"
+    assert captured["kwargs"]["temperature"] == 0
+    assert "untrusted source data" in captured["kwargs"]["system_prompt"]
+    assert "evidence must be a short exact phrase" in captured["prompt"]

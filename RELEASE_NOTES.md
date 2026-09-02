@@ -1,5 +1,161 @@
 # Release Notes
 
+## v3.0.11 — August 31, 2026
+
+- Fixed Redfin rent estimates that could accidentally use unrelated
+  **Willing to be flexible** cards despite an exact bedroom filter. The Fort
+  Morgan failure was a one-bedroom $800 listing and a two-bedroom $1,100
+  listing being treated as three-bedroom evidence.
+- Added a second parser for Redfin's accessible primary-results text, excluded
+  suggestions after **End of results**, and revalidated bedrooms and reasonable
+  square-footage proximity after scraping.
+- Single-family analyses now use Redfin's house-rental route and compute a true
+  even-sample median. The current Fort Morgan 3-bedroom evidence resolves to
+  $1,850–$2,100 with a $1,975 median.
+- Batch Review caches rent evidence by ZIP, bedroom count, and property type,
+  preventing one unfiltered ZIP median from being applied to dissimilar deals.
+- A brochure's **Leased** label remains visible as a seller claim but no longer
+  overrides independent market rent unless the lease is explicitly verified.
+
+## v3.0.10 — August 31, 2026
+
+- Fixed **Verify & Analyze** so a brochure-sourced rent on a leased property is
+  retained as the underwriting input instead of being overwritten by RentCast.
+- RentCast is still called for exact-address verification and its low, estimate,
+  and high values remain visible as market comparisons.
+- Vacant or unleased brochure asking rents can still be replaced by the automatic
+  market estimate, and users can click any displayed comparison to use it.
+- Added brochure coverage for the Fort Morgan example's $2,495 leased rent,
+  $78,000 headline cash requirement, $900 rent credit, and Year-1 free PM.
+
+## v3.0.9 — August 31, 2026
+
+- Renamed **Annual Expense Growth** to **Annual Fixed-Expense Growth** in the
+  expense form, review page, glossary, and What-If workspace.
+- Added visible guidance that it applies only to insurance, HOA, utilities, and
+  other fixed expenses.
+- Clarified that maintenance, vacancy, CapEx, and management already grow with
+  projected rent, while property tax follows its separate state/local policy.
+- Added regression coverage proving fixed-expense growth neither compounds the
+  rent-percentage expenses nor changes property-tax projections.
+
+## v3.0.8 — August 31, 2026
+
+- Replaced the opening-run-rate-only 14-point verdict with a balanced 100-point
+  score: 60 points for **Income Safety** and 40 points for selected-hold
+  **Performance**.
+- Income Safety uses stabilized CoC, cap rate, DSCR, cash flow per unit, and
+  break-even occupancy. Performance uses after-sale pre-tax IRR, average annual
+  operating CoC, and the percentage of held years with positive cash flow.
+- Kept the 1% and 50% rules as visible diagnostics but removed them from the
+  weighted verdict because they duplicate stronger underwriting measures.
+- Applied the identical calculation engine to ZIP-enriched Batch Review rows;
+  batch scores remain clearly labeled market-screen estimates until **Verify &
+  Analyze** replaces ZIP assumptions with property-specific inputs.
+- Seller ROI and tax-benefit claims never enter either score. Timed PM/rent
+  incentives affect only their applicable projection years, while the Income
+  Safety component continues to use stabilized recurring operations.
+- Renamed **CF per Unit (Monthly)** to **Stabilized CF / Unit (Monthly)**.
+
+## v3.0.7 — August 31, 2026
+
+- Corrected projection timing so entered rent and ordinary operating expenses
+  are the Year-1 run rate; their growth assumptions now begin in Year 2.
+- Kept end-of-year property appreciation and amortization timing unchanged.
+- Renamed **Total Monthly Expenses** to **Operating Expenses (excl. P&I)** and
+  explained that tax and insurance overlap with the PITI card.
+- Renamed projection **Cumulative ROI** to **Unrealized ROI** and disclosed that
+  it includes cash flow, appreciation, and debt paydown before selling costs;
+  selected-hold exit profit and IRR continue to include selling costs.
+- Added regression coverage for Year-1/Year-2 rent timing, PM incentive savings,
+  and the clarified result labels.
+
+## v3.0.6 — August 31, 2026
+
+- Added **Gross Rent**, **PM Expense**, and **One-Time Credits** to every row of
+  the hold-period projection.
+- PM expense is net of any active promotion and returns to the stabilized rate
+  after the stated promotional month; rent credits appear only in their
+  applicable year.
+- Added a projection note comparing the seller's monthly cash-flow and rent
+  claims with the independently recalculated model.
+- Batch **Verify & Analyze** now initializes an unstated PM assumption to the
+  ZIP-screen rate or an editable 8% stabilized default instead of retaining a
+  stale value from a previously analyzed property.
+
+## v3.0.5 — August 31, 2026
+
+- Added an optional LLM fallback for brochures whose wording or layout leaves
+  material gaps after deterministic parsing.
+- The fallback uses the configured LM Studio, Ollama, or Anthropic provider,
+  requires short evidence copied from the brochure, rejects low-confidence or
+  unsupported values, and never overwrites deterministic extraction.
+- Model failure is non-blocking, calls are limited to two concurrent brochures,
+  and successful structured extractions are cached for 24 hours.
+- Added `BROCHURE_LLM_PARSER=off` to disable the fallback and
+  `BROCHURE_LLM_MODEL` for an optional extraction-model override.
+
+## v3.0.4 — August 31, 2026
+
+- Added brochure extraction for PM promotions expressed as a percentage and
+  duration, including `0% PM for 2 years`.
+- Added explicit one-time rent-credit and purpose-bound closing-credit types.
+- **Verify & Analyze** now carries structured brochure incentives into the
+  pure calculation engine and saved scenarios.
+- PM discounts affect only their stated months, rent credits enter Year 1 once,
+  and closing credits reduce only eligible acquisition costs. Recurring rent,
+  stabilized NOI, and stabilized monthly cash flow remain uninflated.
+- Added visible applied-incentive summaries on the property, review, and results
+  screens, including unused closing-credit disclosure.
+
+## v3.0.3 — August 31, 2026
+
+- Added `restart_app.sh` for a one-command local restart using the project
+  virtual environment.
+- The script verifies that any listener on port 8000 belongs to this project
+  before stopping it, and refuses to kill unrelated processes.
+
+## v3.0.2 — August 31, 2026
+
+- Kept the Batch Review action column pinned to the right so it remains visible
+  without scrolling to the bottom and then horizontally across a long list.
+- Restored the clearer **Verify & Analyze** label for the property-specific
+  RentCast and full-underwriting action.
+- Versioned the served CSS and JavaScript URLs so a regular page refresh loads
+  the matching release assets after the backend is restarted.
+
+## v3.0.1 — August 31, 2026
+
+This refinement makes the Batch Review distinction explicit: seller columns
+remain claims, ZIP estimates provide a comparable market pre-screen, and each
+row can launch a property-specific detail analysis.
+
+### Highlights
+
+- Added **Run ZIP Estimates**, grouping the inventory by ZIP so repeated deals
+  reuse the same data instead of making duplicate provider calls.
+- ZIP screening prefers free Redfin active-rental medians. RentCast market data
+  fills missing rent or days-on-market, while its persisted 24-hour cache is
+  shared across rows and restarts.
+- Added ZIP tax records, local vacancy, rebuild-cost insurance, age/size-based
+  maintenance and CapEx reserves, FHFA appreciation, and the current mortgage
+  rate to the batch pre-screen.
+- Added market rent, monthly cash flow, cash-on-cash, cap rate, and DSCR columns.
+  The screen discloses its 25% down, 3% closing-cost, 30-year financing defaults
+  and the property-specific costs still missing.
+- Renamed each row action to **Analyze Details**. Exact-address rows explicitly
+  request a property-specific RentCast AVM before the normal Redfin fallback,
+  then continue through the full automatic tax, insurance, vacancy, reserve,
+  appreciation, and editable underwriting workflow.
+- Expanded Batch Review CSV exports with every market input and result.
+
+### Quality and verification
+
+- Added market-screen calculation, ZIP grouping/provider reuse, and explicit
+  property-AVM routing tests.
+- Release verification: 58 Python/API/browser tests and the JavaScript
+  calculation suite pass.
+
 ## v3.0.0 — August 30, 2026
 
 Version 3 adds Batch Review to Smart Deal Finder so seller inventories can be
