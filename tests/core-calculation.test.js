@@ -59,6 +59,59 @@ const input = {
 };
 
 const result = context.computeDeal(input);
+assert.equal(result.strategy, 'hybrid', 'Hybrid is the default strategy');
+const profiles = ['cash_flow', 'hybrid', 'appreciation'];
+const {computeBalancedScore, scorePreferences} = require('../static/js/deal-engine.js');
+const incomeCase = {price:250000, totalRent:3000, totalCashInvested:80000,
+  coc:10, dscr:1.5, monthlyCFPerUnit:300, stressCFPerUnit:250,
+  scoringIRR:3, flatIRR:2, holdYears:10, projRows:[], totalReturnCF:80000};
+const scoreFor = (metrics, strategy) => computeBalancedScore({...metrics, strategy}).dealPoints;
+assert.ok(scoreFor(incomeCase, 'cash_flow') > scoreFor(incomeCase, 'hybrid'));
+assert.ok(scoreFor(incomeCase, 'hybrid') > scoreFor(incomeCase, 'appreciation'));
+const holdCase = {...incomeCase, coc:1, dscr:1.02, monthlyCFPerUnit:20,
+  stressCFPerUnit:-150, scoringIRR:12, flatIRR:5};
+assert.ok(scoreFor(holdCase, 'appreciation') > scoreFor(holdCase, 'hybrid'));
+assert.ok(scoreFor(holdCase, 'hybrid') > scoreFor(holdCase, 'cash_flow'));
+profiles.forEach(strategy => {
+  const metrics = computeDeal({...input, strategy});
+  assert.equal(metrics.dealFactors.reduce((sum,f) => sum+f.maxPoints,0),100);
+  assert.ok(metrics.scoreStressCF < metrics.monthlyCF);
+  assert.ok(scoreFor({...incomeCase, monthlyCFPerUnit:-301}, strategy) <= 44,
+    'An unfunded recurring loss cannot be offset by appreciation');
+  assert.ok(scoreFor({...incomeCase, monthlyCFPerUnit:-1}, strategy) < 75,
+    'Negative current income is never labeled a strong fit');
+  assert.ok(scoreFor({...incomeCase, scoreEvidence:'low'}, strategy) <= 59);
+  assert.ok(scoreFor({...incomeCase, missingCosts:true}, strategy) <= 74);
+});
+const cappedGrowth = computeDeal({...input, valueGrowthPct:3, incomeGrowthPct:3});
+const aggressiveGrowth = computeDeal({...input, valueGrowthPct:15, incomeGrowthPct:15});
+assert.equal(cappedGrowth.dealPoints, aggressiveGrowth.dealPoints,
+  'Increasing appreciation or rent growth above 3% cannot inflate the score');
+assert.equal(cappedGrowth.scoringIRR, aggressiveGrowth.scoringIRR);
+assert.ok(aggressiveGrowth.preTaxIRR > cappedGrowth.preTaxIRR,
+  'The user forecast is retained separately from the bounded scoring scenario');
+const flatCase = computeDeal({...input, valueGrowthPct:0});
+assert.equal(result.scoreFlatIRR, flatCase.preTaxIRR,
+  'No-appreciation return recomputes taxes and costs, not just the sale price');
+const stricterTarget = computeDeal({...input,scoreTargets:{coc:20, cashFlow:1000, irr:25}});
+assert.ok(stricterTarget.dealPoints <= result.dealPoints);
+assert.equal(scorePreferences({strategy:'bogus'}).strategy,'hybrid');
+const paidOff = computeDeal({...input,termYears:5,holdYears:10});
+assert.equal(paidOff.projRows[5].loanBal,0);
+assert.ok(Math.abs(paidOff.projRows[5].cf - (paidOff.projRows[5].income-paidOff.projRows[5].opex)) < 1e-7,
+  'Mortgage payments stop after payoff');
+const zeroRateScreen = computeQuickScore({price:240000,estRent:2500,rentConfidence:'medium'},null,0);
+const cashScreen = computeQuickScore({price:240000,estRent:2500,rentConfidence:'medium'},null,0,{isCash:true});
+assert.equal(zeroRateScreen.mortgageRate,0);
+assert.ok(Math.abs(cashScreen.monthlyCashFlow-zeroRateScreen.monthlyCashFlow-500) < 1e-7,
+  'A 0% loan still repays principal and must differ from buying with cash');
+const listingScreen = computeQuickScore({price:250000,estRent:2800,annualTax:3000,hoaFee:25,rentConfidence:'medium'},null,.065);
+const equivalentFull = computeDeal({...input,arv:250000,rehab:0,points:0,otherIncome:0,
+  insuranceYr:1500,hoaMonth:25,expGrowthPct:3});
+assert.equal(listingScreen.numericScore,equivalentFull.dealPoints,
+  'Search and full analysis produce the same score with the same assumptions');
+assert.equal(listingScreen.monthlyCashFlow,equivalentFull.monthlyCF);
+assert.equal(computeQuickScore({price:250000,estRent:2800},null,.065).provisional,true);
 assert.equal(result.dealMaxPoints, 100,
   'the balanced score must use an intuitive 100-point scale');
 assert.ok(result.dealFactors.some(factor => factor.category === 'income'),

@@ -31,10 +31,10 @@ Free, open-source rental property investment calculator with AI-powered analysis
 
 - **20+ investment metrics** calculated instantly (CoC, Cap Rate, DSCR, NOI, GRM, and more)
 - **AI-powered analysis** — free local models or Claude API
-- **Balanced deal scorecard** — 100-point Income Safety + selected-hold Performance model with factor-by-factor reasoning
+- **Goal-based deal scorecard** — Cash flow, Hybrid (default), and Appreciation profiles with editable targets, downside cases, and factor-by-factor reasoning
 - **Holding-period return breakdown** — Cash Flow + Appreciation + Debt Paydown − Upfront Costs, reported consistently before income tax and after selling costs
 - **Strategy fit analysis** — Cash Flow / Wealth Building / Low Risk / BRRRR
-- **Save, compare, and export** — localStorage scenarios, side-by-side comparison (up to 3), PDF + HTML export
+- **Save, compare, and export** — complete named scenarios, comparison over a common holding period (up to 3), PDF + self-contained HTML reports
 - **Zillow & Redfin scraping** — auto-fill property data from a listing URL
 - **What-If mode** — sliders for 23 modelled underwriting assumptions, grouped and collapsible, with cash flow, pre-tax profit, IRR, a 30-year chart and a full annual projection moving live as you drag
 - **Visible version number** — shown on the page so you always know which build you are looking at
@@ -137,9 +137,24 @@ looking at — check it after restarting to confirm your changes are live.
 > process serves the new page against the old endpoints and every new call
 > returns `404 Not Found`.
 
+### Docker
+
+Local Python use does not require Docker. For container deployment:
+
+    docker build -t rental-property-analyzer .
+    docker run --rm -p 8000:8000 rental-property-analyzer
+
+Pass --env-file .env to docker run if using configured API providers.
+Environment files are excluded from the build context. The container honors
+PORT (default 8000); adjust port mapping if you override it. Local AI servers
+must be reachable from inside the container using the configured provider URL.
+CI builds the image and checks its data files, HTTP startup and static assets.
+
 ### Testing
 
-The suite covers the calculation engine, API contracts, provider fallbacks,
+The suite covers property replacement, multifamily persistence, draft recovery,
+stale asynchronous responses, offline reports, accessible validation, mobile
+batch cards, the calculation engine, API contracts, provider fallbacks,
 automatic listing hydration, all three browser entry paths, What-If, scenarios,
 comparison, CSV/HTML export, AI streaming, and mobile/print layouts.
 
@@ -184,7 +199,19 @@ The current workspace and analysis/result view are stored in the URL hash, so
 browser Back and Forward work without clearing imported deals or search results.
 When a property analysis starts from Find Deals or Batch Review, the analysis
 header provides a direct return to its source.
-Smart Deal Finder also contains a separate Batch Review entry for inventories:
+The app autosaves the current inputs, results, batch selections, and unapplied
+What-If edits on this device. Reloading restores the draft. **Clear workspace
+draft** resets this working state while keeping saved scenarios.
+
+Use **Scenario name** to label financing variants without renaming the property.
+**Save Current** updates that named scenario; **Save as New** creates a distinct
+copy. Multifamily scenarios include each unit's rent. Comparisons recompute the
+saved inputs at the same selected holding period. Older multifamily scenarios
+must have their missing unit rents filled and saved before comparison.
+
+HTML exports include their styles and an input/source snapshot, so they can be
+opened without the server. AI commentary is cleared when the underlying inputs
+change; rerun the analysis for the current assumptions.
 
 ### Single Property (default)
 
@@ -205,12 +232,24 @@ Search a zip code or city to **discover** deals — enter a location and target 
 
 Fully automated deal discovery — enter a location and the app will:
 1. Pull market rents for the area — RentCast when configured, scraped Redfin rentals otherwise
-2. Calculate a smart price cap based on median rent (see [Smart Price Cap](#smart-price-cap))
-3. Search for-sale listings under that cap
+2. Apply your optional maximum price
+3. Retrieve a limited sample of for-sale listings, ordered by price
 4. Score each listing with a [6-star Quick Score](#quick-score-6-stars) using estimated rent
-5. Show all results ranked by deal quality
+5. Rank retrieved results for your selected goal
 
 ### Batch Review
+
+Choose a CSV or public Sheet and click **Import Deals** to preview recognized
+columns, skipped rows and a sample of the inventory. **Confirm Import** replaces
+the current inventory; discarding the preview leaves it unchanged. Optional
+brochure augmentation starts after confirmation.
+
+Use **Shortlist** to retain promising rows and filter the working set.
+**Verify & Analyze** shows checking status, carries the property into the wizard,
+and records the updated rent and cash-flow estimate on the row. These provider
+checks are estimates, not independent verification of seller claims. On phones,
+cards keep price, market cash flow and return estimates visible, with claims and
+incentives under expandable details.
 
 Open **Smart Deal Finder → Import Deal List** to screen a seller inventory
 without treating its marketing figures as verified calculations.
@@ -256,7 +295,7 @@ without treating its marketing figures as verified calculations.
    comparison but is never substituted for the independently calculated cash
    flow. The projection's unrealized ROI includes cash flow, appreciation, and
    debt paydown; use selected-hold profit or IRR for a return after selling costs.
-   Once ZIP estimates are available, Batch Review ranks with the same balanced
+   Once ZIP estimates are available, Batch Review ranks with the same goal-based
    score used by Full Analysis. The row remains labeled a market-screen estimate
    until property-level verification replaces ZIP assumptions.
 
@@ -270,7 +309,8 @@ The batch table intentionally distinguishes these return bases:
 | ZIP market screen | Market rent, monthly cash flow, CoC, cap rate, and DSCR using local ZIP assumptions |
 | Full Analysis | Independently hydrated, editable underwriting and hold-period IRR |
 
-The default Batch Review output columns are:
+Batch Review includes these fields; the desktop table puts market screening and
+goal scores before seller claims:
 
 | Column | Source and meaning |
 |---|---|
@@ -282,7 +322,7 @@ The default Batch Review output columns are:
 | Stabilized CoC | Claim after expiring operating incentives such as discounted PM are removed |
 | ZIP Rent | Redfin active rentals or bedroom/size-adjusted RentCast ZIP market data |
 | Market Screen | ZIP-based monthly cash flow, CoC, cap rate, DSCR, tax, vacancy, and reserves |
-| Balanced Score | Same Income Safety + 10-Year Performance model used by Full Analysis; available after ZIP estimates |
+| Goal Score | Same selected-goal and holding-period model used by Full Analysis; available after ZIP estimates |
 | Incentives | Mutually exclusive seller-fund selection plus non-core tax/PM information |
 | Confidence | Exact-address/property-ready or city/ZIP market-only coverage |
 | Action | Verify & Analyze opens the complete editable property analysis; the column stays pinned on wide tables |
@@ -394,25 +434,49 @@ assumed depreciation savings or subtract capital-gains, depreciation-related,
 state, passive-activity or other taxpayer-specific income taxes. Property tax
 remains an operating expense.
 
-### Balanced Deal Scorecard (100 Points)
+### Goal-Based Deal Scorecard (100 Points)
 
-| Component | Weight | Factors |
-|---|---:|---|
-| **Income Safety** | 60 | Stabilized CoC (15), cap rate (10), stabilized DSCR (15), stabilized CF/unit (10), break-even occupancy (10) |
-| **Selected-Hold Performance** | 40 | After-sale pre-tax IRR (15), average annual operating CoC over the hold (15), cash-flow-positive years (10) |
+Select **Cash flow**, **Hybrid** (default), or **Appreciation** above the workspaces.
+Changing goals recalculates existing search and batch rows without provider calls.
+Drafts and saved scenarios retain targets; comparison uses the active goal and a
+common holding period for every scenario.
 
-The current operating score deliberately remains the majority: projected
-appreciation cannot rescue poor debt coverage. The hold component nevertheless
-recognizes improving rent/cash-flow trajectories and applies selling costs to
-IRR. A deal can therefore read **weak current income, improving long-term
-performance** instead of collapsing both conclusions into one opening-year
-verdict. Seller ROI and estimated income-tax benefits never enter the score.
+| Factor | Cash flow | Hybrid | Appreciation |
+|---|---:|---:|---:|
+| Stabilized cash-on-cash | 25 | 20 | 5 |
+| Debt coverage after CapEx reserves | 20 | 15 | 10 |
+| Monthly cash flow per unit | 20 | 10 | 5 |
+| Downside monthly cash flow per unit | 20 | 15 | 15 |
+| After-sale pre-tax IRR | 10 | 25 | 50 |
+| No-appreciation pre-tax IRR | 5 | 15 | 15 |
 
-Batch Review runs this identical engine after ZIP estimates, using local rent,
-tax, vacancy, insurance, reserves, appreciation, and current financing defaults.
-It labels the result as a market-screen estimate until **Verify & Analyze**.
+Points interpolate continuously up to each target. Editable defaults: 8% CoC,
+$200/unit/month cash flow, 12% IRR, $300/unit/month maximum subsidy. These are
+screening preferences, not market standards or lender criteria. Coverage earns
+points between 0.8x and 1.25x; CoC and IRR between zero and target; cash-flow
+factors between negative subsidy limit and target. Cash purchases receive the
+coverage points because they have no debt service.
 
-**Verdict:** >= 75% = Great Deal | >= 45% = Borderline | < 45% = Pass
+Current losses beyond the subsidy limit cap the score at 44. Other negative
+current cash flow caps Cash flow at 44 and the other profiles at 74. Downside
+losses beyond the limit in any held year, negative modeled after-sale return,
+or zero tax/insurance/vacancy/reserves cap the score at 74. Limited rent evidence
+caps search at 59. Invalid price, rent, or nonpositive cash invested is unscored.
+The lowest applicable ceiling wins; reasons appear beside earned factor points.
+
+Scoring uses at most **3% annual appreciation and 3% rent growth**; the entered
+forecast remains separate. No-appreciation return recomputes the deal at 0%
+value growth, including taxes. Downside also reduces rent 10% and raises fixed
+costs 10%, retaining vacancy and reserves. Results show opening downside cash
+flow and total negative annual cash flows over the hold, beyond upfront cash.
+These are scenarios, not probabilities or neighborhood appreciation forecasts.
+Seller ROI and income-tax benefits never enter scoring. Entered incentives
+retain their actual timing in cash flows.
+
+Fit labels: **75+ strong, 45–74 conditional, below 45 weak**, conditional on
+input quality. Search uses the same engine with disclosed default costs; batch
+uses ZIP estimates and market financing. Full Analysis can change the score
+when better property inputs arrive.
 
 ### Rules of Thumb
 
@@ -424,12 +488,9 @@ It labels the result as a market-screen estimate until **Verify & Analyze**.
 
 ### Strategy Fit
 
-| Strategy | Key Metrics | What Makes It Work |
-|----------|-------------|-------------------|
-| **Cash Flow** | CoC >= 8%, CF/unit >= $200, DSCR >= 1.25 | High rent-to-price, low expenses |
-| **Wealth Building** | 5yr total return, appreciation, equity growth | Growing markets, value-add |
-| **Low Risk** | BEO < 75%, DSCR >= 1.5, 50% rule pass | Conservative margins |
-| **BRRRR** | 70% rule pass, ARV spread | Below-market purchase + forced appreciation |
+Results compare all three goals on identical inputs. Appreciation emphasizes
+return after selling costs and the no-growth comparison. Cash flow emphasizes
+current income and downside carrying costs. Hybrid balances the two.
 
 ### Sensitivity Analysis
 
@@ -449,20 +510,19 @@ The current (base) values are highlighted. This helps you stress-test deals — 
 
 ## Example Scenarios
 
-All three are the same 1995-built house in Columbus, OH 43201, run through the
-app with every default left alone — so property tax, vacancy, appreciation and
-repair reserves are the ones the ZIP, state, age and size produce, not round
-numbers chosen to make a point. Reproduce them by entering the address, price,
-rent and square footage and clicking through.
+These examples use the same 1995-built house in Columbus, OH 43201 and the
+earlier 2.5% conservative appreciation assumption. To use the same growth
+assumption, select Conservative after loading the property. New analyses now
+default to the local historical market rate, so their projected returns differ.
 
 ### Good Deal — Cash Flow Rental
 
 | | |
 |---|---|
 | **Property** | $250,000, $2,800/mo rent, 1,600 sqft |
-| **Auto-filled** | 2.5% growth · 3.9% maintenance · 6.9% CapEx · 8% vacancy |
+| **Example assumptions** | 2.5% conservative growth · 3.9% maintenance · 6.9% CapEx · 8% vacancy |
 | **Results** | Cash Flow **$244/mo** · CoC **4.18%** · Cap Rate **7.16%** · DSCR **1.20** · GRM **7.4** |
-| **Score** | Balanced Income Safety + 10-Year Performance score shown in the app |
+| **Score** | Selected-goal Income Safety + hold-period Performance score shown in the app |
 | **10-Year Pre-Tax Profit** | **$116,861** after selling costs (10.32% annualized · 12.06% IRR) |
 
 ### Borderline Deal — Thin But Positive
@@ -470,9 +530,9 @@ rent and square footage and clicking through.
 | | |
 |---|---|
 | **Property** | $265,000, $2,700/mo rent, 1,700 sqft |
-| **Auto-filled** | 2.5% growth · 4.2% maintenance · 7.6% CapEx · 8% vacancy |
+| **Example assumptions** | 2.5% conservative growth · 4.2% maintenance · 7.6% CapEx · 8% vacancy |
 | **Results** | Cash Flow **$44/mo** · CoC **0.71%** · Cap Rate **6.19%** · DSCR **1.03** · BEO **90.4%** |
-| **Score** | Balanced Income Safety + 10-Year Performance score shown in the app |
+| **Score** | Selected-goal Income Safety + hold-period Performance score shown in the app |
 | **10-Year Pre-Tax Profit** | **$95,181** after selling costs (8.60% annualized · 9.17% IRR) |
 | **Why borderline** | Only $15,000 more than the good deal, and cash flow drops by more than half. Break-even occupancy of 87% leaves almost no room for a bad tenant or a dead furnace. |
 
@@ -481,9 +541,9 @@ rent and square footage and clicking through.
 | | |
 |---|---|
 | **Property** | $500,000, $2,000/mo rent, 2,400 sqft (0.4% rule — far below 1%) |
-| **Auto-filled** | 2.5% growth · 8.1% maintenance · 14.6% CapEx · 8% vacancy |
+| **Example assumptions** | 2.5% conservative growth · 8.1% maintenance · 14.6% CapEx · 8% vacancy |
 | **Results** | Cash Flow **-$2,186/mo** · CoC **-18.73%** · DSCR **0.12** · BEO **201.3%** |
-| **Score** | Balanced Income Safety + 10-Year Performance score shown in the app |
+| **Score** | Selected-goal Income Safety + hold-period Performance score shown in the app |
 | **10-Year Pre-Tax Profit** | **-$124,496** after selling costs |
 | **Why** | The mortgage alone exceeds rent. Even a long hold at the conservative appreciation assumption does not overcome the operating losses. |
 
@@ -512,7 +572,7 @@ rent and square footage and clicking through.
 | Reserve ceiling | 25% of rent combined | A reserve above a quarter of rent almost always means a bad input rather than an unusual property |
 | Management | 10% | Flat assumption — no data source publishes this by zip. Replace with a real quote; add a leasing fee separately, which this app does not model |
 | Closing costs | 3% of price | Varies by state (1-5%) |
-| Value growth | 2.5%/yr, or the ZIP's rate if lower | Held near long-run inflation on purpose, so appreciation is upside rather than an assumption the deal leans on. The ZIP's measured FHFA rate drives the what-if scenarios and lowers this further in weaker markets. Always editable |
+| Value growth | Local FHFA market rate | ZIP historical growth blended toward the state when available, capped at 0–8%. Falls back to state, then national data. Conservative and custom scenarios remain selectable. |
 | Selling costs | 7% of sale price | Commission, title, escrow, transfer tax |
 | Income growth | 2%/yr | Conservative rent increases |
 | Expense growth | 2%/yr | Roughly tracks CPI |
@@ -530,7 +590,7 @@ and leasing fees on turnover.
 ## Tech Stack
 
 - **Backend:** Python, FastAPI, uvicorn, httpx, BeautifulSoup, Playwright, pypdf, Pillow
-- **Frontend:** Vanilla HTML/CSS/JS (single file, no frameworks, no build step)
+- **Frontend:** Vanilla HTML/CSS/JS (separate UI, calculation and navigation files; no frameworks or build step)
 - **AI:** LM Studio (free, GPU) / Ollama (free, local) / Anthropic Claude (paid, cloud)
 - **Data providers:** `providers/` — `redfin.py` (scraping), `rentcast.py` (API),
   `upload.py` (PDF/screenshot), `estimates.py` (tax, insurance and repair reserves),
@@ -612,27 +672,22 @@ state average (70/30 with 25+ years of history, 50/50 below that), because one
 ZIP over one window is a small sample, and capped at 8%/yr — compounding a
 historical outlier for thirty years produces fantasy, not a forecast.
 
-**Both figures are always on screen.** The headline reports the conservative base
-case and, directly beneath it, what the same deal returns if the ZIP repeats its
-measured history — so the cautious default never hides the upside.
-
-**The default is not the historical rate.** Projections run at ~2.5%/yr — roughly
-long-run inflation — rather than at what the area averaged. A rate measured over
-1995–2025 is what a market *did*, and that window contains a long decline in
-mortgage rates that cannot repeat. Underwriting near inflation forces the deal to
-work on cash flow and leaves real appreciation as upside. Local history is not
-discarded: it drives the range, the worst case, the Historical scenario, and it
-lowers the default further in the ~3% of ZIPs that did worse than 2.5%.
+**The default uses local market history.** Projections use the ZIP's historical
+rate blended toward the state as described above. If ZIP data is unavailable,
+the rate falls back to state, then US median data. With no tables, a labeled
+3.5% general assumption is used. This is a historical reference, not a forecast.
+The optional Conservative scenario uses the lower of the market rate and 2.5%.
+A historical comparison appears when a different scenario or custom rate is selected.
 
 **Four what-if scenarios.** One click reruns every number below it — cash flow,
 deal score, exit math, ROI:
 
 | Scenario | For ZIP 95337 | What it is |
 |---|---|---|
-| Downturn | −10.9%/yr | Weakest 10% of five-year windows |
-| **Conservative** (default) | **2.5%/yr** | Near inflation |
-| Historical | 4.4%/yr | What this area averaged |
-| Strong | 13.0%/yr | Strongest 10% of five-year windows |
+| Downturn | −10.9%/yr | Adjusted 10th-percentile spread of five-year windows |
+| Conservative | 2.5%/yr | Lower of market rate and 2.5% |
+| **Historical (default)** | **4.4%/yr** | Local historical rate, blended toward state |
+| Strong | 13.0%/yr | Adjusted 90th-percentile spread of five-year windows |
 
 Typing your own rate drops out of scenario mode and says so. The same
 $700K property swings from −$334,636 to +$403,561 of net appreciation across
@@ -661,8 +716,8 @@ cannot express that, so the app names it in dollars at your purchase price.
 *A note on percentiles:* the 5-year window distribution is left-skewed, so a
 median or p25 is *higher* than the geometric mean in volatile markets (95337's
 p25 is 5.7% against a 4.2% mean). The mean already carries the compounding drag
-of a crash; percentiles do not. That is why the conservative default is an
-inflation anchor and not a low percentile.
+of a crash; percentiles do not. The optional Conservative scenario uses an
+inflation anchor rather than a low percentile.
 
 **What selling costs you.** The sale path is deliberately pre-income-tax and
 shows only transaction economics:
@@ -844,32 +899,18 @@ Search an entire zip code or city to **discover** investment deals — not just 
 
 ### Quick Score (6 Stars)
 
-Each listing is scored on six investor checks as a discovery-only first pass.
-The full [balanced scorecard](#balanced-deal-scorecard-100-points) takes over
-after the property or batch row has enough expense and hold-period inputs:
+Search uses the [goal scorecard](#goal-based-deal-scorecard-100-points) with
+explicit defaults: 3% closing costs, 1.2% annual property tax unless supplied by
+the listing, 0.6% annual insurance, 5% each for vacancy/maintenance/CapEx, 8%
+management, 2% rent growth and 3% fixed-cost growth. Financing, points, hold and
+sale costs follow your inputs. HOA uses listing data; other costs and rehab are
+unverified. Expand rows for assumptions and points. Multifamily requires a
+per-unit rent roll in Full Analysis.
 
-| Check | ★ Condition | What It Tells You |
-|-------|-------------|-------------------|
-| **Est. Cap Rate** | >= 6% | Decent return after estimated expenses |
-| **Est. DSCR** | >= 1.25 | NOI comfortably covers debt service |
-| **Est. Cash Flow** | >= $100/mo | Positive cash flow after mortgage |
-| **1% Rule** | rent/price >= 1% | Rent high enough relative to price |
-| **GRM** | <= 12 | Low price relative to annual rent |
-| **Est. Total Return** | >= 10% yr1 | Strong combined return (CF + appreciation + equity). Appreciation is the listing's own ZIP rate, held near inflation — not a flat 3% |
-
-Stars are color-coded: **5-6 = green** (strong deal), **3-4 = yellow** (borderline), **1-2 = red** (weak), **0 = gray** (doesn't pass any check). Each check also has a numeric score (0-100) for ranking.
-
-> **Where the rent comes from.** With `RENTCAST_API_KEY` set, each listing is
-> scored against a rent estimated from its own bedroom count and square footage,
-> and the row shows the sample size behind it. Without a key, enter an Override
-> Rent — but note that one rent across every row makes cash flow, the 1% rule and
-> GRM pure functions of price, so the ranking becomes "cheapest first" rather
-> than a comparison of deals. Rows say which rent they used.
->
-> Rent does not scale linearly with size: in one real zip 1-bed units rent at
-> $2.53/sqft against $1.35/sqft for 4-beds. The estimate anchors on the bedroom
-> class median and damps the size adjustment, then clamps to the range that
-> class actually rents for.
+Stars display the same numeric score: 90+ = 6, 75+ = 5, 60+ = 4, 45+ = 3,
+30+ = 2, 15+ = 1, below 15 = 0. Search scores are provisional. Redfin comps
+match bedrooms and, when possible, size; sample counts and confidence remain
+visible. HUD remains a separate benchmark until explicitly applied.
 
 ### Analyze → Full Wizard
 
@@ -890,11 +931,11 @@ Click **Deal Alerts** in the toolbar above search results to set thresholds:
 | Max Price | — | Budget cap |
 | Min Beds | — | Minimum bedrooms |
 
-Listings that match all criteria get a green **"Match"** badge and highlighted row. Preferences are saved to localStorage.
+Listings that match all criteria get a green **"Filter match"** badge and highlighted row. Preferences are saved to localStorage.
 
 ### Export CSV
 
-Click **Export CSV** to download all search results as a spreadsheet with columns: Address, Price, Beds, Baths, Sqft, Quick Score, 1% Rule, Est. Cap Rate, Est. Cash Flow, and Listing URL.
+Click **Export CSV** to download results with goal, hold, score, estimated cash flow, rent evidence, full scoring assumptions, and listing URL.
 
 ### Saved Filters
 
@@ -906,25 +947,11 @@ Neighborhood Search is limited to **3 searches per minute** to avoid overloading
 
 ### Smart Price Cap
 
-Smart Deal Finder calculates a maximum property price from median market rent to focus on listings that could actually pencil out as investments. The formula is:
-
-```
-smart_max_price = median_rent × 250    (rounded up to nearest $25K, min $75K)
-```
-
-The multiplier (250) corresponds to a GRM of ~20.8 — the upper bound of "worth analyzing" for rental investments. Here's how different multipliers translate:
-
-| Multiplier | Implied Rent/Price | GRM | Example ($1,127 median rent) |
-|---|---|---|---|
-| 100 | 1.00% | 8.3 | $112,700 (strict 1% rule) |
-| 150 | 0.67% | 12.5 | $169,050 |
-| 200 | 0.50% | 16.7 | $225,400 |
-| **250** | **0.40%** | **20.8** | **$281,750 (current default)** |
-| 300 | 0.33% | 25.0 | $338,100 |
-
-At current ~6-7% mortgage rates, almost nothing meets the 1% rule. The 250 multiplier balances showing enough listings to find deals while filtering out properties where the numbers can never work. Properties above this cap are almost certainly negative cash flow with no path to viability.
-
-> **To change the multiplier:** Edit `smart_max_price = int(best_rent * 250)` in `app.py` (search for "smart_max_price"). Lower = stricter filtering, higher = more results.
+Smart Deal Finder applies your optional **Max Price**. The rent-times-250 cap
+and hidden $750,000 ceiling were removed so a cash-flow heuristic cannot exclude
+appreciation candidates before scoring. The provider retrieves a limited sample
+ordered by price, not the entire market. Broaden the search or use Neighborhood
+Search filters to inspect other candidates.
 
 ### Known Limitations
 
@@ -939,7 +966,7 @@ At current ~6-7% mortgage rates, almost nothing meets the 1% rule. The 250 multi
 - **Insurance is a state average, not a quote** — it cannot see wildfire or flood zones, claims history, roof age, or the CA FAIR Plan. Sonoma County and inland California get the same number, which is wrong in a way no state-level table can fix
 - **Replacement cost is estimated, not appraised** — maintenance and CapEx are sized from state-average construction cost per square foot, damped halfway toward the national average. Only the national figure ($162/sqft, NAHB) and a few state anchors are measured; the rest of the table is regional interpolation. A single state figure also cannot tell inland from coastal, so California is one number for both Manteca and Palo Alto
 - **Age is a crude proxy for condition** — a renovated 1920s house and a neglected one get the same reserve. Year built is the only condition signal a listing reliably provides
-- **Appreciation is measured backwards** — the FHFA rate is what a ZIP did over the last 30 years, not a forecast. That window contains a full boom and crash, but also a long decline in mortgage rates that will not repeat. This is why the default underwrites near inflation instead; the range is the honest part
+- **Appreciation is measured backwards** — the FHFA rate is what a ZIP did over the last 30 years, not a forecast. That window contains a full boom and crash, but also a long decline in mortgage rates that will not repeat. The default uses that local historical rate; the scenarios show how returns change under different assumptions
 - **~4,000 ZIP codes have no FHFA index** — FHFA omits areas with too few repeat sales, so those fall back to the state rate
 - **Income taxes are excluded** — depreciation savings, passive-loss treatment, capital-gains tax, depreciation-related tax, state tax and 1031 exchanges require taxpayer-specific analysis
 
@@ -964,3 +991,32 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to run locally and submit PRs.
 ## License
 
 [MIT](LICENSE) — free to use, modify, and distribute.
+
+
+### HUD rent benchmarks (optional)
+
+Add `HUD_API_TOKEN` to the local `.env` file using a token registered for the
+[HUD Fair Market Rents API](https://www.huduser.gov/portal/dataset/fmr-api.html).
+Optionally set `HUD_FMR_YEAR=2027`, then restart the server. Tokens are sent only
+from the backend to HUD and never returned to the browser.
+
+- In Neighborhood Search or Smart Deal Finder, click **Add HUD benchmarks**.
+  Existing market rents and deal scores are unchanged.
+- Under **Analyze Property → Rental Income → HUD rent benchmark**, choose the
+  bedrooms per rental unit and fiscal year, then look up the property.
+- If Census cannot match the address, select a state and HUD county/town manually.
+  An optional ZIP selects Small Area FMR when HUD supplies it; otherwise the
+  benchmark is explicitly labeled as area-level.
+- To use HUD for a single-family analysis, enter the tenant-paid utility allowance
+  (including an explicit zero if none), then click **Use adjusted HUD rent**.
+  Saved scenarios retain the benchmark and allowance. Multifamily benchmarks
+  are per unit; enter the individual unit rents separately.
+
+HUD gross rents include utilities and are not guaranteed voucher payments or
+property-specific appraisals. FY2027 starts October 1, 2026; the UI labels future
+fiscal years, but users must verify local program effective dates. Large-unit
+benchmarks use HUD's four-bedroom amount plus 15% per additional bedroom and are
+labeled as derived. Data is cached locally for 24 hours and address geography for
+30 days in ignored `.hud_*.json` files. API/geocoding failures leave the market
+estimate intact and show an explanation. Lookups are limited to four concurrent
+properties and return partial results after 45 seconds.

@@ -1,5 +1,71 @@
 # Release Notes
 
+## v3.4.1 — September 9, 2026
+
+- Prefill HUD state and ZIP from the current property, retain manual corrections in drafts, and clear stale geography when properties change.
+- Clarify HUD lookups for city/ZIP-only listings, require a county when using manual state selection, and prevent lookup while the county list is loading.
+- Keep the current property address visible in the sticky navigation throughout analysis, including Income, Expenses, Review, and Results. The address follows edits and restored scenarios and clears for a new property.
+
+## v3.4.0 — September 9, 2026
+
+- Added Cash flow, Hybrid (default), and Appreciation profiles with editable targets, shared underwriting, and automatic re-scoring across search, batch, analysis, and comparison. Drafts and scenarios retain preferences.
+- Added continuous weighted factors, scoring growth caps, no-appreciation IRR, downside analysis, and score ceilings for unfunded losses, limited rent evidence, and missing costs.
+- Fixed mortgage payments after payoff and zero-interest quick screens omitting principal repayment.
+- Replaced hidden Smart Deal Finder price heuristics with an optional explicit maximum price.
+- Updated CSV exports and added scoring, persistence, comparison, and search-filter regressions.
+
+## v3.3.0 — September 9, 2026
+
+- Added server-side HUD FMR/SAFMR API support with cached, explicit fiscal-year lookups and a local-only token configuration.
+- Added Census address geography resolution and manual HUD county/town selection. Exact ZIP benchmarks take precedence over area-level benchmarks when available.
+- Added HUD benchmarks alongside search market rents without changing scores or rent inputs.
+- Added a Rental Income lookup panel with explicit tenant-paid utility deductions before applying HUD rent. Saved scenarios retain the benchmark and adjustment.
+- Added error handling for missing data, bad credentials, mismatched years, unmatched addresses, and delayed lookups. Large-bedroom derived values and future fiscal years are labeled.
+
+## v3.2.1 — September 9, 2026
+
+- Fixed Neighborhood Search and Smart Deal Finder treating minimum bedrooms as an exact rental filter and omitting the selected house type.
+- Match Redfin asking rents by exact bedrooms, and within 25% of floor area when at least three comparable rentals are available. Use a conventional median and report the actual matched sample count.
+- Leave unmatched homes without a Redfin rent instead of borrowing the closest bedroom group. Retain the bounded RentCast ZIP fallback, without substituting a different ZIP when data is unavailable.
+- Display rent method, sample count, and confidence; label manual overrides. Refresh searches saved under the old estimation method.
+- Added regression coverage for mixed bedroom searches, size matching, missing comps, ZIP fallback, manual overrides, and old saved results.
+
+## v3.2.0 — September 9, 2026
+
+- Replaced property-specific state consistently across listing URLs, uploads,
+  search and batch analysis. Zero HOA and missing fields no longer inherit the
+  previous property's values. Older estimate responses cannot overwrite a newer
+  property.
+- Applied confirmed upload property types and required per-unit rents for
+  multifamily underwriting.
+- Saved complete scenarios, including unit rents and source metadata. Added
+  independent scenario names and Save as New. Comparisons recalculate saved
+  inputs over a common selected holding period.
+- Added local draft recovery for current inputs, searches, batch inventory,
+  shortlist/incentive selections and unapplied What-If edits. Clearing the
+  workspace leaves saved scenarios intact.
+- Bound AI commentary to its input snapshot. Changes clear stale commentary,
+  cancel in-flight analysis, and expose incomplete-stream errors.
+- Made HTML reports self-contained with embedded styles and an input/source
+  snapshot, removing controls that cannot work offline.
+- Added import previews with recognized columns, sample rows and skipped-row
+  counts. Batch rows show checking status and before/after property estimates.
+- When the market mortgage-rate lookup is unavailable, batch screening uses
+  the entered rate (or an explicit 7% default), rather than silently assuming 0%.
+- Added mobile batch cards, shortlist filtering, explicit market/seller labels,
+  readable search metrics, expandable screening reasons and ranking assumptions.
+- Moved property type into the first step, grouped investment assumptions, added
+  manual entry, input confidence/source summaries and editable stress presets.
+- Added accessible field errors, focus management, status announcements and a
+  keyboard-accessible comparison dialog.
+- Fixed Docker's runtime file set, installed matching Playwright system
+  dependencies, honored PORT, excluded local secrets/caches from the build
+  context, and added a Docker image/HTTP smoke job to CI.
+
+Older multifamily scenarios did not contain unit rents. Load them, enter the
+missing rent roll, and save again before comparing. Drafts and scenarios remain
+local to the browser/device; they are not cloud backups.
+
 ## v3.1.1 — September 1, 2026
 
 - Fixed **Verify & Analyze** unexpectedly advancing Batch Review deals directly

@@ -26,7 +26,7 @@
   <header>
     <h1>Rental Property Deal Analyzer</h1>
     <p>Real-time investment metrics &amp; AI-powered analysis</p>
-  <div class="app-version" id="appVersion">v3.1.1</div>
+  <div class="app-version" id="appVersion">v3.4.1</div>
   </header>
 
   <nav class="workspace-nav" id="workspaceNav" aria-label="Main navigation">
@@ -42,7 +42,37 @@
       <span>Batch Review</span>
       <small>Import and compare inventory</small>
     </button>
+    <div class="active-property" id="activeProperty" hidden>
+      <span>Analyzing</span>
+      <strong id="activePropertyAddress" aria-live="polite"></strong>
+    </div>
   </nav>
+
+  <section class="goal-panel" aria-label="Investment goal">
+    <div class="goal-heading">
+      <div><label for="investmentStrategy">Investment goal</label>
+        <select id="investmentStrategy"><option value="cash_flow">Cash flow</option><option value="hybrid" selected>Hybrid</option><option value="appreciation">Appreciation</option></select>
+      </div>
+      <p id="strategyDescription" aria-live="polite"></p>
+    </div>
+    <details class="goal-settings"><summary>Targets &amp; scoring assumptions</summary>
+      <div class="goal-targets">
+        <div><label for="targetCoC">Cash-on-cash target (%)</label><input id="targetCoC" type="number" min="1" max="30" step="0.5" value="8"></div>
+        <div><label for="targetCF">Cash flow target ($/unit/mo)</label><input id="targetCF" type="number" min="1" max="5000" value="200"></div>
+        <div><label for="targetIRR">After-sale IRR target (%)</label><input id="targetIRR" type="number" min="1" max="40" step="0.5" value="12"></div>
+        <div><label for="maxSubsidy">Max loss you can fund ($/unit/mo)</label><input id="maxSubsidy" type="number" min="0" max="10000" value="300"></div>
+      </div>
+      <p>Targets are your screening preferences. Scores use the selected holding period, all upfront costs and selling costs. Scoring limits annual appreciation and rent growth to 3%; your entered forecast remains visible in Results. The no-appreciation case uses 0% price growth. The downside case also lowers rent 10% and raises fixed costs 10%.</p>
+      <p>Negative current cash flow cannot earn a strong fit. Losses beyond your monthly limit cannot earn a conditional fit. Limited rent evidence caps a screen at 59/100. Scores do not measure a neighborhood’s future appreciation potential.</p>
+      <p id="screenFinancingNote"></p>
+    </details>
+  </section>
+
+  <div class="draft-toolbar">
+    <span id="draftStatus">Drafts are saved on this device.</span>
+    <button type="button" class="btn btn-small btn-secondary" onclick="clearWorkspaceDraft()">Clear workspace draft</button>
+  </div>
+  <div id="workflowStatus" class="workflow-status" role="status" aria-live="polite"></div>
 
   <!-- Wizard Navigation -->
   <div class="wizard-nav" id="wizardNav" role="tablist" aria-label="Analysis steps">
@@ -88,10 +118,13 @@
 
   <!-- Scenario Save/Load Toolbar -->
   <div class="scenario-toolbar" id="scenarioToolbar">
-    <select id="scenarioSelect"><option value="">— Saved Scenarios —</option></select>
-    <button class="btn btn-small" type="button" onclick="loadScenario()">Load</button>
+    <label class="sr-only" for="scenarioSelect">Saved scenario</label><select id="scenarioSelect" data-saved-only><option value="">— Saved Scenarios —</option></select>
+    <button class="btn btn-small" type="button" data-saved-only onclick="loadScenario()">Load</button>
+    <label class="sr-only" for="scenarioName">Scenario name</label>
+    <input id="scenarioName" type="text" placeholder="Scenario name (optional)" aria-label="Scenario name">
+    <button class="btn btn-small btn-secondary" type="button" onclick="saveScenario(true)">Save as New</button>
     <button class="btn btn-small" type="button" onclick="saveScenario()">Save Current</button>
-    <button class="btn btn-small btn-danger" type="button" onclick="deleteScenario()">Delete</button>
+    <button class="btn btn-small btn-danger" type="button" data-saved-only onclick="deleteScenario()">Delete</button>
     <span class="scenario-count" id="scenarioCount"></span>
   </div>
 
@@ -128,6 +161,10 @@
     <div id="singlePropertyMode">
       <div class="section-title">Property URL &amp; Purchase Details</div>
 
+      <div class="entry-options">
+        <span>Start with a listing, upload, or enter the property yourself.</span>
+        <button type="button" class="btn btn-small btn-secondary" onclick="document.getElementById('propName').focus()">Enter manually</button>
+      </div>
       <div class="url-row">
         <input type="text" id="zillowUrl" placeholder="Paste a Zillow or Redfin listing URL...">
         <button class="btn" id="fetchBtn" type="button" onclick="fetchZillow()">
@@ -167,12 +204,17 @@
         </div>
       </div>
 
+      <div id="verificationChanges" class="verification-changes" hidden></div>
       <div class="verified-incentives" id="verifiedIncentives" style="display:none;">
         <strong>Brochure incentives included</strong>
         <div id="verifiedIncentiveList"></div>
         <p>One-time credits affect acquisition or promotional-year cash flow; they do not inflate recurring rent or stabilized NOI.</p>
       </div>
 
+      <div class="property-type-field"><span>Property type</span><div class="prop-type-toggle" id="propTypeToggle">
+      <button class="active" data-type="sfh" onclick="setPropertyType('sfh')">Single Family</button>
+      <button data-type="multi" onclick="setPropertyType('multi')">Multifamily (2-4)</button>
+    </div></div>
       <div class="input-grid" style="margin-bottom:12px;">
         <div class="input-group" style="grid-column: 1 / -1;">
           <label for="propName">Property Name / Address</label>
@@ -197,11 +239,7 @@
           <label for="rehabBudget">Rehab / Repair Budget ($)</label>
           <input type="text" inputmode="decimal" class="currency-input" id="rehabBudget" value="0" min="0" step="500">
         </div>
-        <div class="input-group">
-          <label for="valueGrowth">Property Value Growth (%/yr)</label>
-          <input type="number" id="valueGrowth" value="3" min="-25" max="50" step="0.5">
-          <div class="usage-note" id="valueGrowthNote" style="display:none;"></div>
-        </div>
+
         <div class="input-group">
           <label for="sqft">Square Footage</label>
           <input type="number" id="sqft" value="" min="0" step="1" placeholder="Optional">
@@ -211,7 +249,17 @@
           <input type="number" id="yearBuilt" value="" min="1500" max="2035" step="1" placeholder="Optional">
           <div class="usage-note" id="yearBuiltNote" style="display:none;"></div>
         </div>
-        <div class="input-group">
+
+
+      </div>
+
+      <details class="investment-assumptions" open>
+        <summary>Investment assumptions</summary>
+        <div class="input-grid">        <div class="input-group">
+          <label for="valueGrowth">Property Value Growth (%/yr)</label>
+          <input type="number" id="valueGrowth" value="3.5" min="-25" max="50" step="0.5">
+          <div class="usage-note" id="valueGrowthNote" style="display:none;"></div>
+        </div>        <div class="input-group">
           <label for="holdYears">Holding Period (years)</label>
           <select id="holdYears">
             <option value="5">5 years</option>
@@ -221,13 +269,11 @@
             <option value="30">30 years</option>
           </select>
           <div class="usage-note" id="holdYearsNote" style="display:none;"></div>
-        </div>
-        <div class="input-group">
+        </div>        <div class="input-group">
           <label for="sellingCostPct">Selling Costs (% of sale price)</label>
           <input type="number" id="sellingCostPct" value="7" min="0" max="20" step="0.5">
-        </div>
-      </div>
-
+        </div></div>
+      </details>
       <details style="margin-top:14px;">
         <summary style="cursor:pointer;font-weight:600;">Optional tax context (not included in returns)</summary>
         <div class="input-grid" style="margin-top:12px;">
@@ -250,7 +296,7 @@
     <!-- ===== Neighborhood Search Mode ===== -->
     <div id="searchMode" style="display:none">
       <div class="section-title">Neighborhood Search</div>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Search for listings in a zip code, city, or neighborhood. Each listing is scored against its own estimated rent for that area and size — set an Override Rent only if you want one figure applied to every result.</p>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Search for listings in a zip code, city, or neighborhood. Rent estimates use matching bedrooms and similar sizes when enough rental listings are available. Homes may share a bedroom median; check the sample size and estimate basis. Set an Override Rent only if you want one figure applied to every result.</p>
 
       <div class="search-filters">
         <div class="input-group">
@@ -307,16 +353,18 @@
       <div id="searchResultsContainer" style="display:none;margin-top:20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div class="section-title" style="margin-bottom:0;border-bottom:none;padding-bottom:0;" id="searchResultsTitle">Results</div>
+          <button class="btn btn-small" id="searchHUDBtn" onclick="loadHUDBenchmarks('search')">Add HUD benchmarks</button>
           <div class="search-toolbar">
             <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.82rem;cursor:pointer;margin-right:8px;">
               <input type="checkbox" id="filterGoodDeals" onchange="applyDealAlerts()" style="cursor:pointer;accent-color:var(--accent);">
-              Good deals only (★★★+)
+              45+ score (★★★+)
             </label>
             <button class="btn btn-small btn-secondary" onclick="toggleAlertConfig()">Deal Alerts</button>
             <button class="btn btn-small btn-secondary" onclick="exportSearchCSV()">Export CSV</button>
           </div>
         </div>
 
+        <p class="usage-note">Filter matches reflect your preferences; they do not verify a deal’s returns.</p>
         <div class="alert-config" id="alertConfig">
           <div style="font-size:0.82rem;font-weight:600;margin-bottom:8px;">Highlight listings that meet your criteria:</div>
           <div class="alert-row">
@@ -343,7 +391,8 @@
                 <th onclick="sortSearchResults('price')" class="sortable" data-col="price">Price</th>
                 <th onclick="sortSearchResults('beds')" class="sortable" data-col="beds">Beds/Baths</th>
                 <th onclick="sortSearchResults('sqft')" class="sortable" data-col="sqft">Sqft</th>
-                <th onclick="sortSearchResults('score')" class="sortable" data-col="score">Quick Score</th>
+                <th>Est. Rent</th><th>Est. Cash Flow</th><th>Rent Source</th>
+                <th onclick="sortSearchResults('score')" class="sortable" data-col="score">Goal Score</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -362,7 +411,7 @@
       </div>
 
       <div id="smartDiscoverPanel">
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Enter a location and we'll automatically look up market rents, then find properties where the numbers actually work.</p>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Enter a location and we'll automatically look up market rents, then rank the retrieved properties for your selected goal. Results are a limited sample, retrieved by price, not a complete market ranking.</p>
 
       <div class="search-filters">
         <div class="input-group">
@@ -389,6 +438,10 @@
           </select>
         </div>
         <div class="input-group">
+          <label for="smartMaxPrice">Max Price ($)</label>
+          <input id="smartMaxPrice" type="text" class="currency-input" inputmode="decimal" placeholder="No maximum">
+        </div>
+        <div class="input-group">
           <label for="smartMaxResults">Max Results</label>
           <select id="smartMaxResults">
             <option value="25">25</option>
@@ -412,10 +465,11 @@
       <div id="smartResultsContainer" style="display:none;margin-top:20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div class="section-title" style="margin-bottom:0;border-bottom:none;padding-bottom:0;" id="smartResultsTitle">Results</div>
+          <button class="btn btn-small" id="smartHUDBtn" onclick="loadHUDBenchmarks('smart')">Add HUD benchmarks</button>
           <div class="search-toolbar">
             <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.82rem;cursor:pointer;margin-right:8px;">
               <input type="checkbox" id="smartFilterGood" onchange="renderSmartResults()" style="cursor:pointer;accent-color:var(--accent);">
-              Good deals only (&#9733;&#9733;&#9733;&#9733;+)
+              60+ score (&#9733;&#9733;&#9733;&#9733;+)
             </label>
             <button class="btn btn-small btn-secondary" onclick="exportSmartCSV()">Export CSV</button>
           </div>
@@ -428,6 +482,7 @@
                 <th onclick="sortSmartResults('price')" class="sortable" data-col="price">Price</th>
                 <th onclick="sortSmartResults('beds')" class="sortable" data-col="beds">Beds/Baths</th>
                 <th onclick="sortSmartResults('estRent')" class="sortable" data-col="estRent">Est. Rent</th>
+                <th>Est. Cash Flow</th><th>Rent Source</th>
                 <th onclick="sortSmartResults('score')" class="sortable" data-col="score">Deal Score</th>
                 <th>Action</th>
               </tr>
@@ -459,6 +514,13 @@
           </div>
         </div>
 
+        <div id="batchImportPreview" class="import-preview" hidden>
+          <h3>Review this inventory before importing</h3>
+          <div id="batchPreviewSummary"></div>
+          <div class="table-scroll" id="batchPreviewRows"></div>
+          <button type="button" class="btn" onclick="commitBatchImport()">Confirm Import</button>
+          <button type="button" class="btn btn-secondary" onclick="cancelBatchImport()">Discard Preview</button>
+        </div>
         <div id="batchStatus" class="search-status" style="display:none;"></div>
 
         <div id="batchResultsContainer" style="display:none;margin-top:20px;">
@@ -466,7 +528,7 @@
           <div class="batch-toolbar">
             <div>
               <div class="section-title batch-results-title" id="batchResultsTitle">Imported deals</div>
-              <div class="usage-note" style="display:block;">After ZIP estimates, default ranking uses the same balanced Income Safety + 10-Year Performance score as Full Analysis. Seller ROI and tax-benefit claims never enter the score.</div>
+              <div class="usage-note" style="display:block;">After ZIP estimates, default ranking uses the selected goal and holding period with the same scoring model as Full Analysis; ZIP costs and financing are shown per row. Seller ROI and tax-benefit claims never enter the score.</div>
             </div>
             <div class="search-toolbar">
               <button class="btn btn-small" id="batchMarketBtn" type="button" onclick="runBatchMarketEstimates()">Run ZIP Estimates</button>
@@ -474,6 +536,9 @@
               <button class="btn btn-small btn-secondary" type="button" onclick="exportBatchCSV()">Export Review CSV</button>
             </div>
           </div>
+          <p id="batchAssumptions" class="usage-note"></p>
+          <label class="shortlist-filter"><input type="checkbox" id="batchShortlistedOnly" onchange="renderBatchView()"> Shortlisted deals only</label>
+          <div id="batchMobileCards" class="batch-mobile-cards"></div>
           <div class="batch-table-wrap">
             <table class="search-results-table batch-results-table" id="batchResultsTable">
               <thead>
@@ -486,7 +551,7 @@
                   <th onclick="sortBatchResults('stabilized_coc_pct')" class="sortable" data-col="stabilized_coc_pct">Stabilized CoC</th>
                   <th onclick="sortBatchResults('market_rent')" class="sortable" data-col="market_rent">ZIP Rent</th>
                   <th>Market Screen</th>
-                  <th onclick="sortBatchResults('market_analysis.dealPoints')" class="sortable" data-col="market_analysis.dealPoints">Balanced Score</th>
+                  <th onclick="sortBatchResults('market_analysis.dealPoints')" class="sortable" data-col="market_analysis.dealPoints">Goal Score</th>
                   <th>Incentives</th>
                   <th>Confidence</th>
                   <th>Action</th>
@@ -549,10 +614,7 @@
   <div class="step-panel" data-step="3" id="step3" role="tabpanel">
     <div class="section-title">Rental Income</div>
 
-    <div class="prop-type-toggle" id="propTypeToggle">
-      <button class="active" data-type="sfh" onclick="setPropertyType('sfh')">Single Family</button>
-      <button data-type="multi" onclick="setPropertyType('multi')">Multifamily (2-4)</button>
-    </div>
+
 
     <div id="sfhRentGroup">
       <div class="input-grid">
@@ -571,7 +633,35 @@
       </div>
     </div>
 
+    <details class="hud-panel" id="hudPanel">
+      <summary>HUD rent benchmark <span class="hud-tag">FMR / SAFMR</span></summary>
+      <p>Compare the property rent with HUD's gross-rent benchmark. Utilities are included; this is an area benchmark, not a property appraisal or a guaranteed voucher payment.</p>
+      <div class="input-grid">
+        <div class="input-group"><label for="hudBeds">Bedrooms per rental unit</label><select id="hudBeds"><option value="">Choose bedrooms</option><option value="0">Studio</option><option value="1">1 bedrooms</option><option value="2">2 bedrooms</option><option value="3">3 bedrooms</option><option value="4">4 bedrooms</option><option value="5">5 bedrooms</option><option value="6">6 bedrooms</option><option value="7">7 bedrooms</option><option value="8">8 bedrooms</option><option value="9">9 bedrooms</option><option value="10">10 bedrooms</option></select></div>
+        <div class="input-group"><label for="hudYear">HUD fiscal year</label><select id="hudYear"><option value="2027">FY2027 (starts Oct 2026)</option><option value="2026">FY2026</option><option value="2025">FY2025</option></select></div>
+      </div>
+      <details class="hud-manual"><summary>Choose an area manually if the address cannot be matched</summary>
+        <p>State and ZIP are filled from the property address and can be corrected here. City/ZIP-only listings also need a HUD county / town.</p>
+        <div class="input-grid">
+          <div class="input-group"><label for="hudState">State</label><select id="hudState"><option value="">Choose state</option></select></div>
+          <div class="input-group"><label for="hudArea">HUD county / town</label><select id="hudArea"><option value="">Automatic address match</option></select></div>
+          <div class="input-group"><label for="hudZip">ZIP code for Small Area FMR</label><input id="hudZip" inputmode="numeric" maxlength="5" placeholder="Optional ZIP"></div>
+        </div>
+      </details>
+      <button class="btn btn-small" id="hudLookupBtn" type="button">Look up HUD benchmark</button>
+      <div id="hudConnection" class="hud-status"></div>
+      <div id="hudStatus" class="hud-status" role="status" aria-live="polite"></div>
+      <div id="hudResult" hidden></div>
+      <div id="hudApplyControls" hidden>
+        <label for="hudUtilityAllowance">Tenant-paid utility allowance ($/month)</label>
+        <input id="hudUtilityAllowance" type="number" min="0" step="1" placeholder="Enter allowance; 0 if none">
+        <p id="hudAdjustedRent" aria-live="polite"></p>
+        <button class="btn btn-small" id="hudApplyBtn" type="button" disabled>Use adjusted HUD rent</button>
+      </div>
+    </details>
+
     <div class="multifamily-inputs" id="multifamilyInputs">
+      <p id="unitRentNote" class="usage-note" role="status"></p>
       <div class="input-grid">
         <div class="input-group">
           <label for="unitCount">Number of Units</label>
@@ -716,6 +806,7 @@
       <button id="resultsTabDetails" type="button" role="tab" aria-selected="false" aria-controls="resultsPanelDetails" tabindex="-1" data-results-view="details" onclick="showResultsView('details')">Full Details</button>
     </div>
 
+    <div id="inputConfidence" class="input-confidence" role="status"></div>
     <div class="results-view active" id="resultsPanelSummary" role="tabpanel" aria-labelledby="resultsTabSummary" data-results-panel="summary">
 
     <!-- Decision verdict -->
@@ -767,7 +858,13 @@
         <div class="whatif-actions">
           <button class="btn" type="button" onclick="whatifApply()">Apply to my analysis</button>
           <button class="btn btn-secondary" type="button" onclick="whatifReset()">Reset sliders</button>
-          <span class="whatif-dirty" id="whatifDirty"></span>
+          <span class="whatif-dirty" id="whatifDirty" role="status"></span>
+          <div class="stress-presets" aria-label="Editable stress scenarios">
+            <span>Start a stress scenario:</span>
+            <button type="button" class="btn btn-small" onclick="applyStressPreset('rent')">Rent −10%</button>
+            <button type="button" class="btn btn-small" onclick="applyStressPreset('vacancy')">Vacancy +5 points</button>
+            <button type="button" class="btn btn-small" onclick="applyStressPreset('flat')">No appreciation</button>
+          </div>
         </div>
       </div>
     </div>
@@ -904,7 +1001,9 @@
         </button>
       </div>
       <div class="ai-error" id="aiError"></div>
+      <p id="aiStatus" class="usage-note" role="status"></p>
       <div class="ai-output" id="aiOutput"></div>
+      <details class="source-details"><summary>Inputs and sources to verify</summary><div id="inputSources" class="table-scroll"></div></details>
     </div>
 
     <!-- I) Download Report -->
@@ -928,12 +1027,15 @@
 </div>
 
 <!-- Compare Mode Overlay -->
-<div class="compare-overlay" id="compareOverlay">
+<div class="compare-overlay" id="compareOverlay" role="dialog" aria-modal="true" aria-label="Compare scenarios">
   <div class="compare-container">
     <div class="compare-header">
       <h2>Compare Scenarios</h2>
       <button class="btn btn-small" onclick="closeCompare()">&times; Close</button>
     </div>
+    <label for="compareHold">Compare over the same holding period</label>
+    <select id="compareHold"><option value="5">5 years</option><option value="10" selected>10 years</option><option value="15">15 years</option><option value="20">20 years</option><option value="30">30 years</option></select>
+    <p id="compareNote" role="status">Returns will be recalculated using the same holding period.</p>
     <div class="compare-select-row">
       <div class="compare-col">
         <label>Scenario A</label>
@@ -954,6 +1056,7 @@
 </div>
 
 <script src="static/js/deal-engine.js"></script>
+<script src="static/js/hud.js"></script>
 <script src="static/js/app.js"></script>
 <script src="static/js/navigation.js"></script>
 </body>

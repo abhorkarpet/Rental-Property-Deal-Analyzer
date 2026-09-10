@@ -730,7 +730,7 @@ async def _search_redfin_rentals(
     )
 
     return {
-        "rentals": rentals[:15],
+        "rentals": rentals,
         "total": len(rentals),
         "stats": {
             "avg": round(avg_rent),

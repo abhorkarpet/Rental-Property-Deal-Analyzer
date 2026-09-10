@@ -13,6 +13,7 @@ import uvicorn
 
 from providers import (
     appreciation,
+    hud,
     estimates,
     page_fetch,
     property_tax,
@@ -27,6 +28,7 @@ from providers.redfin import (
     _search_redfin_rentals,
 )
 from schemas import (
+    HUDBenchmarkRequest,
     BatchAugmentRequest,
     BatchEnrichRequest,
     BatchImportRequest,
@@ -76,8 +78,12 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # 3.0.11 validates Redfin rental cards and separates stated from verified rent.
 # 3.1.0 separates Analyze, Find, and Batch into persistent routed workspaces.
 # 3.1.1 keeps Batch verification on the populated Property page for review.
+# 3.2.0 preserves complete property workspaces and improves verification, export and mobile review.
 # Bump this and the served page follows automatically.
-APP_VERSION = "3.1.1"
+# 3.2.1 fixes search rental matching and exposes estimate evidence.
+# 3.3.0 adds HUD FMR/SAFMR benchmarks with explicit utility-adjusted application.
+# 3.4.0 adds goal-based scoring, downside scenarios, and explicit search limits.
+APP_VERSION = "3.4.1"
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +198,7 @@ async def smart_search(request: Request, payload: SmartSearchRequest):
             min_beds=payload.min_beds,
             property_type=payload.property_type,
             min_price=payload.min_price,
+            max_price=payload.max_price,
             max_results=payload.max_results,
             allow_overage=payload.allow_overage or _is_local_request(request),
             ensure_mortgage_rate=_ensure_mortgage_rate,
@@ -245,6 +252,10 @@ async def enrich_batch_review(request: Request, payload: BatchEnrichRequest):
         return JSONResponse({"error": "No imported deals were provided."}, status_code=400)
     allow_overage = payload.allow_overage or _is_local_request(request)
     rate = await _ensure_mortgage_rate()
+    rate_source = "market"
+    if rate is None:
+        rate = payload.mortgage_rate_pct if payload.mortgage_rate_pct is not None else 7.0
+        rate_source = "entered" if payload.mortgage_rate_pct is not None else "default"
     semaphore = asyncio.Semaphore(4)
     zip_cache: dict[str, dict] = {}
     redfin_cache: dict[tuple, dict] = {}
@@ -409,6 +420,7 @@ async def enrich_batch_review(request: Request, payload: BatchEnrichRequest):
         "screened_count": sum(d.get("market_status") == "screened" for d in enriched),
         "zip_count": len(zip_codes),
         "mortgage_rate": rate,
+        "mortgage_rate_source": rate_source,
         "rentcast_usage": rentcast.usage(),
     }
     if quota_gate:
@@ -750,6 +762,46 @@ async def tax_rate(request: Request):
     if gate:
         payload["quota_gate"] = gate
     return JSONResponse(payload)
+
+
+@app.get("/api/hud/status")
+async def hud_status():
+    return {"configured": hud.is_configured(), "default_year": hud.default_year()}
+
+
+@app.get("/api/hud/areas")
+async def hud_areas(state: str):
+    try:
+        return {"areas": await hud.areas(state.upper())}
+    except hud.HUDError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.post("/api/hud/benchmarks")
+async def hud_benchmarks(request: Request, payload: HUDBenchmarkRequest):
+    if not _is_local_request(request) and not _check_rate_limit(f"hud:{request.client.host}", 5):
+        return JSONResponse({"error": "Too many HUD lookups. Please wait a minute."}, status_code=429)
+    if not hud.is_configured():
+        return JSONResponse({"error": "HUD is not configured. Add HUD_API_TOKEN to .env and restart."}, status_code=400)
+    semaphore = asyncio.Semaphore(4)
+    async def lookup(item):
+        async with semaphore:
+            try:
+                return await hud.benchmark(item.address, item.beds, payload.year, item.entity_id, item.zip_code)
+            except hud.HUDError as exc:
+                return {"error": str(exc)}
+    tasks = [asyncio.create_task(lookup(item)) for item in payload.properties]
+    try:
+        done, pending = await asyncio.wait(tasks, timeout=45)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        results = [task.result() if task in done else {"error": "HUD lookup timed out. Retry or choose an area manually."} for task in tasks]
+        return {"results": results}
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
 
 
 @app.post("/api/appreciation")

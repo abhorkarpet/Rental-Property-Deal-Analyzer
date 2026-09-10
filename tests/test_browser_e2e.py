@@ -1,6 +1,7 @@
 """End-to-end browser coverage for every entry path and Results workflow."""
 
 import json
+import csv as csv_module
 import socket
 import threading
 import time
@@ -309,7 +310,24 @@ def test_neighborhood_search_hydrates_every_automatic_assumption(page, live_serv
     assert page.locator("#vacancy").input_value() == "5.5"
     assert page.locator("#maintenance").input_value() == "6.2"
     assert page.locator("#capex").input_value() == "5.4"
+    assert page.locator("#valueGrowth").input_value() == "4.2"
+    assert "4.2%/yr" in page.locator("#valueGrowthNote").inner_text()
+    page.evaluate("setApprScenario('conservative', 2.5)")
     assert page.locator("#valueGrowth").input_value() == "2.5"
+    page.evaluate("setApprScenario('historical', 4.2)")
+    assert page.locator("#valueGrowth").input_value() == "4.2"
+    page.evaluate("""() => {
+        const growth = document.querySelector('#valueGrowth');
+        growth.value = '1.75';
+        growth.dispatchEvent(new Event('input', {bubbles: true}));
+    }""")
+    with page.expect_response("**/api/appreciation"):
+        page.evaluate("""() => {
+            const hold = document.querySelector('#holdYears');
+            hold.value = '15';
+            hold.dispatchEvent(new Event('change', {bubbles: true}));
+        }""")
+    assert page.locator("#valueGrowth").input_value() == "1.75"
     assert page.locator("#yearBuilt").input_value() == "1985"
 
     paths = [call["path"] for call in calls]
@@ -339,7 +357,7 @@ def test_smart_finder_hydrates_listing_and_exports_ranked_csv(page, live_server,
     csv_path = tmp_path / "smart.csv"
     download_info.value.save_as(csv_path)
     csv = csv_path.read_text(encoding="utf-8")
-    assert "Address,Price,Beds" in csv
+    assert next(csv_module.reader(csv.splitlines()))[:3] == ["Address", "Price", "Beds"]
     assert "101 Test Ave" in csv
 
     page.locator("#smartResultsBody button").click()
@@ -432,6 +450,7 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
         "https://docs.google.com/spreadsheets/d/test-sheet/edit?gid=1"
     )
     page.get_by_role("button", name="Import Deals").click()
+    page.get_by_role("button", name="Confirm Import").click()
 
     page.locator("#batchResultsBody tr").wait_for()
     table_text = page.locator("#batchResultsBody").inner_text()
@@ -446,7 +465,7 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
     assert "Income" in page.locator("#batchResultsBody").inner_text()
     assert "10yr" in page.locator("#batchResultsBody").inner_text()
 
-    page.locator(".batch-incentive-select").select_option("incentive-1")
+    page.locator("#batchResultsBody .batch-incentive-select").select_option("incentive-1")
     assert "Selected cash to close: $26,000.00" in page.locator("#batchResultsBody").inner_text()
 
     with page.expect_download() as download_info:
@@ -455,9 +474,9 @@ def test_batch_review_separates_promotional_and_stabilized_returns(page, live_se
     download_info.value.save_as(export_path)
     exported_csv = export_path.read_text(encoding="utf-8")
     assert "Stabilized CoC" in exported_csv
-    assert "Balanced Score" in exported_csv
+    assert "Goal Score" in exported_csv
     assert "Income Safety Score" in exported_csv
-    assert "10-Year Performance Score" in exported_csv
+    assert "Hold Performance Score" in exported_csv
 
     action_header = page.locator("#batchResultsTable th:last-child")
     action_button = page.get_by_role("button", name="Verify & Analyze →")
@@ -492,7 +511,7 @@ def test_scenarios_compare_and_mobile_print_layout(page, live_server):
     page.evaluate("saveScenario()")
     page.evaluate(
         """() => {
-          document.querySelector('#propName').value = 'Lower Price Variant';
+          document.querySelector('#scenarioName').value = 'Lower Price Variant';
           document.querySelector('#purchasePrice').value = '225000';
           goToStep(6);
           saveScenario();

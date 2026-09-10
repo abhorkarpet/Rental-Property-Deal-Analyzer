@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from providers import appreciation, rentcast
 from providers.base import extract_zip
-from providers.redfin import _search_redfin_page, _search_redfin_rentals
+from providers.redfin import _search_redfin_page, _search_redfin_rentals, _median_rent, _qualify_redfin_rentals
 
 
 MAX_MARKET_ZIPS_PER_SEARCH = 3
@@ -19,12 +19,11 @@ class SearchError(Exception):
 
 
 def _median(values: list[int]) -> int:
-    ordered = sorted(values)
-    return ordered[len(ordered) // 2]
+    return _median_rent(values)
 
 
 def attach_appreciation(result: dict, location: str) -> None:
-    """Attach the same conservative ZIP appreciation used by the analyzer."""
+    """Attach the same local market appreciation used by the analyzer."""
     listings = result.get("listings") or []
     if not listings:
         return
@@ -39,7 +38,7 @@ def attach_appreciation(result: dict, location: str) -> None:
                 address=address if key != "_" else fallback
             )
         profile = resolved[key]
-        listing["apprPct"] = profile["conservative_pct"]
+        listing["apprPct"] = profile["rate_pct"]
         listing["apprHistoricalPct"] = profile["rate_pct"]
         listing["apprSource"] = profile["source"]
 
@@ -87,9 +86,10 @@ async def attach_market_rents(
         result["rentcast_usage"] = rentcast.usage()
         return
 
-    default_zip = next(iter(fetched))
     for listing, zip_code in zip(listings, listing_zips):
-        data = fetched.get(zip_code or default_zip) or fetched[default_zip]
+        data = fetched.get(zip_code)
+        if not data:
+            continue
         estimate = rentcast.rent_from_market(
             data, listing.get("beds"), listing.get("sqft")
         )
@@ -98,23 +98,44 @@ async def attach_market_rents(
             listing["rentSource"] = "rentcast_market"
             listing["rentSampleSize"] = estimate.get("sample_size")
             listing["rentDaysOnMarket"] = estimate.get("days_on_market")
+            listing["rentBasis"] = f"ZIP {zip_code} market estimate; verify property-specific rent"
+            listing["rentConfidence"] = "low"
+            listing["rentMethodVersion"] = 2
 
     result["rent_zips"] = list(fetched)
     result["rentcast_usage"] = rentcast.usage()
 
 
 def attach_redfin_rents(result: dict, rentals_result: dict) -> None:
-    """Attach free bedroom-matched Redfin medians before metered fallbacks."""
-    medians, all_rents = _rent_medians(rentals_result.get("rentals") or [])
-    overall = _median(all_rents) if all_rents else 0
-    if not overall:
-        return
+    """Match asking rents by exact bedrooms, then size when evidence permits.
+
+    Never substitute a smaller home's rent for a missing bedroom group. A
+    bedroom median can legitimately repeat; expose the method and sample size.
+    """
+    rentals = _qualify_redfin_rentals(rentals_result.get("rentals") or [])
     for listing in result.get("listings") or []:
-        estimate = _rent_for_beds(listing.get("beds"), medians, overall)
-        if estimate:
-            listing["estRent"] = estimate
-            listing["rentSource"] = "redfin"
-            listing["rentSampleSize"] = len(all_rents)
+        listing.update(estRent=None, rentSource=None, rentSampleSize=0,
+                       rentConfidence="unavailable", rentMethodVersion=2,
+                       rentBasis="No matching bedroom rental comps; verify rent")
+        beds = listing.get("beds")
+        if beds is None:
+            continue
+        comps = [r for r in rentals if r.get("beds") == beds]
+        if not comps:
+            continue
+        basis = f"{beds}-bed asking-rent median; size not matched"
+        sqft = listing.get("sqft")
+        if sqft and sqft > 0:
+            sized = [r for r in comps if r.get("sqft") and
+                     0.75 <= r["sqft"] / sqft <= 1.25]
+            if len(sized) >= 3:
+                comps = sized
+                basis = f"{beds}-bed asking-rent median; size within 25%"
+        listing.update(
+            estRent=_median([r["rent"] for r in comps]), rentSource="redfin",
+            rentSampleSize=len(comps), rentBasis=basis,
+            rentConfidence="medium" if len(comps) >= 5 else "low",
+        )
     result["rent_stats"] = rentals_result.get("stats")
 
 
@@ -123,7 +144,7 @@ async def neighborhood_search(
 ) -> dict:
     result, rentals_result = await asyncio.gather(
         _search_redfin_page(location, filters),
-        _search_redfin_rentals(location, filters.get("min_beds") or None),
+        _search_redfin_rentals(location, None, property_type=filters.get("property_type") or "house"),
     )
     if "error" in result and "listings" not in result:
         raise SearchError(result["error"])
@@ -148,27 +169,13 @@ def _rent_medians(rentals: list[dict]) -> tuple[dict[int, int], list[int]]:
     return {beds: _median(rents) for beds, rents in by_beds.items()}, all_rents
 
 
-def _rent_for_beds(
-    beds: int | None, medians: dict[int, int], overall_median: int
-) -> int | None:
-    bed_rent = None
-    if beds and beds in medians:
-        bed_rent = medians[beds]
-    elif beds and medians:
-        closest = min(medians, key=lambda count: abs(count - beds))
-        bed_rent = medians[closest]
-
-    if bed_rent and overall_median and bed_rent > overall_median * 1.3:
-        return int((bed_rent + overall_median) / 2)
-    return bed_rent or overall_median or None
-
-
 async def smart_deals(
     *,
     location: str,
     min_beds: int = 0,
     property_type: str | None = None,
     min_price: float | None = None,
+    max_price: float | None = None,
     max_results: int = 50,
     allow_overage: bool = False,
     ensure_mortgage_rate: Callable[[], Awaitable[float | None]],
@@ -176,15 +183,14 @@ async def smart_deals(
     """Discover and enrich likely deals without leaking HTTP concerns here."""
     initial_filters = {
         "min_price": min_price or 25_000,
-        "max_price": 750_000,
+        "max_price": max_price,
         "min_beds": min_beds,
         "property_type": property_type or "house",
         "max_results": min(max_results + 20, 80),
         "sort": "price-asc",
     }
-    rental_beds = min_beds if min_beds >= 2 else None
     rentals_result, listings_result, current_rate = await asyncio.gather(
-        _search_redfin_rentals(location, rental_beds),
+        _search_redfin_rentals(location, None, property_type=property_type or "house"),
         _search_redfin_page(location, initial_filters),
         ensure_mortgage_rate(),
     )
@@ -197,50 +203,24 @@ async def smart_deals(
     )
     overall_median = _median(all_rents) if all_rents else 0
 
-    market_zip_data = None
-    quota_gate = None
-    if not all_rents and rentcast.is_configured():
-        market_zip = (
-            rentcast.zip_from_address(listings_result.get("location_label") or "")
-            or rentcast.zip_from_address(location)
-        )
-        if not market_zip:
-            market_zip = next(
-                (
-                    rentcast.zip_from_address(listing.get("address"))
-                    for listing in listings_result.get("listings") or []
-                    if rentcast.zip_from_address(listing.get("address"))
-                ),
-                None,
-            )
-        if market_zip:
-            market_result = await rentcast.market_data(market_zip, allow_overage)
-            market_zip_data = market_result.get("data")
-            quota_gate = market_result.get("gate")
-            market_median = (
-                (market_zip_data or {}).get("rentalData") or {}
-            ).get("medianRent")
-            if market_median:
-                overall_median = market_median
-
-    if not all_rents and not market_zip_data:
+    attach_redfin_rents(listings_result, rentals_result)
+    await attach_market_rents(listings_result, location, allow_overage)
+    quota_gate = listings_result.get("quota_gate")
+    estimates = [l["estRent"] for l in listings_result.get("listings", [])
+                 if l.get("estRent")]
+    if not overall_median and estimates:
+        overall_median = _median(estimates)
+    if not estimates and not quota_gate:
         raise SearchError(
-            "No rental data found for this area. Try a nearby zip code — "
-            "rent comps are needed to estimate deals."
+            "No rental data found for these homes. Try a nearby zip code — "
+            "matching bedroom rent comps are needed to estimate deals."
         )
 
-    smart_max_price = None
-    if overall_median > 0:
-        smart_max_price = int(overall_median * 250)
-        smart_max_price = ((smart_max_price + 24_999) // 25_000) * 25_000
-        smart_max_price = max(smart_max_price, 75_000)
-
+    # Goal scoring happens on the client. A rent/price heuristic must not
+    # silently remove appreciation or hybrid candidates before they are scored.
     listings = listings_result.get("listings", [])
-    if smart_max_price:
-        listings = [
-            listing for listing in listings
-            if listing.get("price", 0) <= smart_max_price
-        ]
+    if max_price is not None:
+        listings = [listing for listing in listings if (listing.get("price") or 0) <= max_price]
     listings = [
         listing for listing in listings
         if not (listing.get("address") or "").strip().startswith("0 ")
@@ -248,30 +228,9 @@ async def smart_deals(
     if not listings:
         raise SearchError("No for-sale listings found. Try a different location.")
 
-    for listing in listings[:max_results]:
-        listing["estRent"] = _rent_for_beds(
-            listing.get("beds"), rent_median_by_beds, overall_median
-        )
-        if market_zip_data:
-            scaled = rentcast.rent_from_market(
-                market_zip_data, listing.get("beds"), listing.get("sqft")
-            )
-            if scaled:
-                listing["estRent"] = scaled["rent"]
-                listing["rentSource"] = "rentcast_market"
-                listing["rentSampleSize"] = scaled.get("sample_size")
-                listing["rentDaysOnMarket"] = scaled.get("days_on_market")
-
-        price = listing.get("price") or 0
-        if listing["estRent"] and price > 0:
-            listing["estRent"] = min(
-                listing["estRent"], max(int(price * 0.02), 500)
-            )
-
     listings = listings[:max_results]
     result = {"listings": listings}
     attach_appreciation(result, location)
-    rent_count = len(all_rents)
 
     payload = {
         "listings": listings,
@@ -280,9 +239,9 @@ async def smart_deals(
         "location_label": listings_result.get("location_label", location),
         "rent_stats": rentals_result.get("stats"),
         "rent_by_beds": {str(key): value for key, value in rent_median_by_beds.items()},
-        "smart_max_price": smart_max_price,
+        "smart_max_price": max_price,
         "rent_confidence": (
-            "high" if rent_count >= 15 else "medium" if rent_count >= 5 else "low"
+            "medium" if listings and all(l.get("rentConfidence") == "medium" for l in listings) else "low"
         ),
         "mortgage_rate": current_rate,
         "rentcast_usage": rentcast.usage(),

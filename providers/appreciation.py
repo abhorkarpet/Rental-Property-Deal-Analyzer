@@ -48,16 +48,8 @@ LONG_HISTORY_YEARS = 25
 # Last resort when an address resolves to neither a ZIP nor a state.
 FALLBACK_RATE_PCT = 3.5
 
-# What the app underwrites at by default.
-#
-# The historical rate is what a market *did*, not what it will do, and the
-# window that produced it (1995-2025) contains a long decline in mortgage
-# rates that cannot repeat. Underwriting at roughly long-run inflation instead
-# means the deal has to work on cash flow, and any real appreciation is upside
-# rather than a load-bearing assumption.
-#
-# Taking the lower of this and the local rate means local history can only ever
-# make the default more cautious, never less. It binds for about 97% of ZIPs.
+# Optional conservative scenario. The default uses the local market rate;
+# this anchor remains available for testing a lower-growth assumption.
 CONSERVATIVE_ANCHOR_PCT = 2.5
 
 _cache: dict = {}

@@ -24,7 +24,7 @@
   function inputNumber(value) {
     var cleaned = String(value === null || value === undefined ? '' : value)
       .replace(/[$,\s]/g, '');
-    return parseFloat(cleaned);
+    return cleaned === '' ? NaN : Number(cleaned);
   }
 
   function val(el, min, max) {
@@ -44,14 +44,9 @@
     if (!el || document.activeElement === el) return;
     if (String(el.value).trim() === '') return;
     var amount = inputNumber(el.value);
-    if (isNaN(amount)) {
-      el.value = '';
-      return;
-    }
+    if (isNaN(amount)) return;
     var min = inputNumber(el.getAttribute('min'));
     var max = inputNumber(el.getAttribute('max'));
-    if (!isNaN(min)) amount = Math.max(min, amount);
-    if (!isNaN(max)) amount = Math.min(max, amount);
     el.value = '$' + amount.toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2
@@ -94,6 +89,14 @@
   // inputs so the pure engine can place each benefit in the correct period.
   var activeDealIncentives = [];
   var activeSellerClaim = null;
+  var propertyGeneration = 0;
+  var taxRequestId = 0, appreciationRequestId = 0, scrapeRequestId = 0, uploadRequestId = 0;
+  var aiController = null, aiRunId = 0, aiInputSignature = null, aiCompletedAt = null;
+  var draftReady = false, restoringDraft = false;
+  var pendingBatchImport = null;
+  var batchRevision = 0;
+  var defaultSnapshot = null;
+  var verificationBaseline = null;
 
   function emitNavigationChange(type, detail) {
     document.dispatchEvent(new CustomEvent('app:navigation-change', {
@@ -111,6 +114,7 @@
   var PROJECTION_YEARS = window.DealEngine.PROJECTION_YEARS;
 
   var SOURCE_LABELS = {
+    hud_adjusted: 'HUD benchmark less tenant utilities',
     zillow: 'Zillow', redfin: 'Redfin', rentcast_avm: 'RentCast',
     rentcast_market: 'RentCast area', pdf: 'PDF', pdf_ai: 'PDF (AI)',
     screenshot_ai: 'Screenshot (AI)', estimated: 'Estimated', fhfa: 'FHFA',
@@ -224,19 +228,55 @@
     });
   }
 
-  function validateStep(step) {
+  function validateStep(step, all) {
+    document.querySelectorAll('.field-error').forEach(function(el) { el.remove(); });
+    document.querySelectorAll('.input-error').forEach(function(el) {
+      el.classList.remove('input-error'); el.removeAttribute('aria-invalid');
+      el.removeAttribute('aria-errormessage');
+    });
+    var fields = [];
+    if (all) fields = Array.from(document.querySelectorAll('#singlePropertyMode input, #step2 input, #step3 input, #step4 input'));
+    else fields = Array.from(document.querySelectorAll('#step' + step + ' input'));
     var errors = [];
-    if (step === 1 && appMode === 'single' && val($('purchasePrice'), 0) <= 0) errors.push('purchasePrice');
-    if (step === 3 && propertyType === 'sfh' && val($('monthlyRent'), 0) <= 0) errors.push('monthlyRent');
-    document.querySelectorAll('.input-error').forEach(function(el) { el.classList.remove('input-error'); });
-    errors.forEach(function(id) { $(id).classList.add('input-error'); });
+    fields.forEach(function(el) {
+      if (!el.matches('.currency-input, input[type=number]') || el.disabled) return;
+      if (el.closest('#loanFields') && $('cashPurchase').checked) return;
+      if (el.id === 'monthlyRent' && propertyType !== 'sfh') return;
+      if (el.classList.contains('unit-rent') && (propertyType !== 'multi' ||
+          Array.from(document.querySelectorAll('.unit-rent')).indexOf(el) >= Number($('unitCount').value))) return;
+      var raw = el.value.trim(), n = inputNumber(raw);
+      var required = el.id === 'purchasePrice' || el.id === 'monthlyRent' || el.classList.contains('unit-rent');
+      var label = el.labels && el.labels[0] ? el.labels[0].textContent.replace(/\(.*$/, '').trim() : 'This value';
+      var message = '';
+      if (required && (!raw || !Number.isFinite(n) || n <= 0)) message = label + ' must be greater than zero.';
+      else if (raw && !Number.isFinite(n)) message = 'Enter a valid number for ' + label.toLowerCase() + '.';
+      else if (raw && el.hasAttribute('min') && n < Number(el.min)) message = label + ' must be at least ' + el.min + '.';
+      else if (raw && el.hasAttribute('max') && n > Number(el.max)) message = label + ' must be at most ' + el.max + '.';
+      if (!message) return;
+      if (!el.id) el.id = 'unitRent' + Array.from(document.querySelectorAll('.unit-rent')).indexOf(el);
+      el.classList.add('input-error'); el.setAttribute('aria-invalid', 'true');
+      var error = document.createElement('div');
+      error.id = el.id + '-error'; error.className = 'field-error'; error.textContent = message;
+      el.setAttribute('aria-errormessage', error.id); el.after(error); errors.push(el);
+    });
+    if (errors.length) {
+      var panel = errors[0].closest('.step-panel');
+      if (all && panel) {
+        currentStep = Number(panel.dataset.step);
+        document.querySelectorAll('.step-panel').forEach(function(p) { p.classList.toggle('active', p === panel); });
+        updateWizardNav(); emitNavigationChange('step', {step:currentStep});
+      }
+      var group = errors[0].closest('details'); if (group) group.open = true;
+      errors[0].focus();
+      announce(errors.length + ' input' + (errors.length > 1 ? 's need' : ' needs') + ' attention. ' + errors[0].nextElementSibling.textContent);
+    }
     return errors.length === 0;
   }
 
   window.goToStep = function(n) {
-    if (n < 1 || n > 6) return;
+    if (n < 1 || n > 6) return false;
     // Validate current step when moving forward
-    if (n > currentStep && !validateStep(currentStep)) return;
+    if (n === 6 ? !validateStep(6, true) : (n > currentStep && !validateStep(currentStep))) return false;
 
     // Hide current
     var panels = document.querySelectorAll('.step-panel');
@@ -253,11 +293,11 @@
     if (n === 5) populateReview();
     // Calculate when entering step 6
     if (n === 6) {
-      whatifSeed = null;
-      whatifOverrides = {};
       calculate();
     }
     emitNavigationChange('step', { step: n });
+    scheduleDraft();
+    return true;
   };
 
   window.wizardClick = function(n) {
@@ -265,8 +305,7 @@
   };
 
   window.finishAnalysis = function() {
-    goToStep(6);
-    showResultsView('summary');
+    if (goToStep(6)) showResultsView('summary');
   };
 
   var currentResultsView = 'summary';
@@ -283,7 +322,10 @@
       button.setAttribute('aria-selected', active ? 'true' : 'false');
       button.tabIndex = active ? 0 : -1;
     });
-    if (view === 'whatif' && !whatifSeed) whatifOpen();
+    if (view === 'whatif') {
+      if (!whatifSeed) whatifOpen();
+      else { renderWhatifSliders(); whatifRecalc(); $('whatifBody').style.display = ''; }
+    }
     var tabs = document.querySelector('.results-view-tabs');
     if (view !== 'summary' && tabs) {
       tabs.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -389,6 +431,7 @@
   }
 
   async function applyCarryingCostRates(forceRefetch, allowOverage) {
+    var generation = propertyGeneration, requestId = ++taxRequestId;
     var price = val($('purchasePrice'), 0);
     if (!price) return;
     var address = $('propName').value.trim() || (scrapedData && scrapedData.address) || '';
@@ -409,6 +452,7 @@
           })
         });
         var data = await resp.json();
+        if (generation !== propertyGeneration || requestId !== taxRequestId || price !== val($('purchasePrice'), 0) || address !== $('propName').value.trim()) return;
         if (!resp.ok || data.error) return;
         if (data.quota_gate) showQuotaGate(data.quota_gate, function(ok) { applyCarryingCostRates(true, ok); });
         if (data.usage) updateUsageDisplay(data.usage);
@@ -526,6 +570,7 @@
   var appreciationProfile = null;
 
   async function applyAppreciation(forceRefetch) {
+    var generation = propertyGeneration, requestId = ++appreciationRequestId;
     if (appreciationProfile && !forceRefetch) { applyAppreciationToField(); return; }
     var address = $('propName').value.trim() || (scrapedData && scrapedData.address) || '';
     try {
@@ -536,34 +581,27 @@
       });
       var data = await resp.json();
       if (!resp.ok || data.error) return;
+      if (generation !== propertyGeneration || requestId !== appreciationRequestId || address !== $('propName').value.trim()) return;
       appreciationProfile = data;
     } catch (err) { return; }
     applyAppreciationToField();
     if (typeof calculate === 'function') calculate();
   }
 
-  // The default is deliberately below what this ZIP historically did.
-  //
-  // A rate measured over 1995-2025 is what a market did, not what it will do,
-  // and that window contains a long decline in mortgage rates that cannot
-  // repeat. Underwriting near long-run inflation forces the deal to work on
-  // cash flow and leaves real appreciation as upside. The local history is not
-  // discarded — it drives the range, the worst case, and the Historical
-  // scenario, and it lowers the default further in markets that did worse.
+  // Use the local FHFA market rate by default. Conservative and custom
+  // assumptions remain available through the scenario controls.
   function applyAppreciationToField() {
     var p = appreciationProfile;
     if (!p) return;
     if (!userEditedFields['valueGrowth']) {
-      activeScenario = 'conservative';
-      $('valueGrowth').value = p.conservative_pct;
+      activeScenario = 'historical';
+      $('valueGrowth').value = p.rate_pct;
       markSource('valueGrowth', p.source === 'default' ? 'estimated' : 'fhfa');
     }
     var note = $('valueGrowthNote');
     if (note) {
-      note.textContent = p.conservative_pct < p.rate_pct
-        ? p.conservative_pct + '%/yr, held near inflation on purpose — ' + p.label +
-          ' averaged ' + p.rate_pct + '%. The gap is upside, not underwriting.'
-        : p.rate_pct + '%/yr — ' + p.label;
+      note.textContent = p.rate_pct + '%/yr — ' + p.label +
+        (p.source === 'default' ? '' : '. Based on historical market growth; editable.');
       note.style.display = '';
     }
   }
@@ -594,6 +632,7 @@
   };
 
   async function handleUpload(input, kind) {
+    var generation = propertyGeneration, requestId = ++uploadRequestId;
     var file = input.files && input.files[0];
     if (!file) return;
     var status = $('uploadStatus');
@@ -606,6 +645,7 @@
       var resp = await fetch('/api/extract-upload', { method: 'POST', body: form });
       var data = {};
       try { data = await resp.json(); } catch (e) { /* non-JSON error body */ }
+      if (generation !== propertyGeneration || requestId !== uploadRequestId) return;
       if (!resp.ok || data.error) {
         // Never show a content-free message: FastAPI validation errors arrive
         // as `detail`, and some failures have no JSON body at all.
@@ -644,55 +684,33 @@
     $('uploadConfirm').style.display = '';
   }
 
-  function applyUpload() {
+  async function applyUpload() {
     if (!pendingUpload) return;
-    var d = pendingUpload.data, source = pendingUpload.source;
-
-    if (d.price) {
-      $('purchasePrice').value = d.price; markSource('purchasePrice', source);
-      $('closingCosts').value = Math.round(d.price * 0.03);
-      userEditedFields['closingCosts'] = false;
-    }
-    if (d.address) { $('propName').value = d.address; markSource('propName', source); }
-    if (d.sqft) { $('sqft').value = d.sqft; markSource('sqft', source); }
-    if (d.hoaFee) { $('hoa').value = d.hoaFee; markSource('hoaFee', source); }
-    if (d.annualTax) showSellerTaxContext(d.annualTax);
-
-    scrapedData = Object.assign({}, scrapedData || {}, d);
-    fillYearBuilt(d.yearBuilt);
-    $('propAddress').textContent = d.address || 'Address unavailable';
-    var bits = [];
-    if (d.beds) bits.push(d.beds + ' bed');
-    if (d.baths) bits.push(d.baths + ' bath');
-    if (d.sqft) bits.push(fmtInt(d.sqft) + ' sqft');
-    $('propDetails').textContent = bits.join(' | ');
-    $('propImage').style.display = 'none';
-    $('propertyCard').classList.add('visible');
-
-    $('uploadConfirm').style.display = 'none';
-    $('uploadStatus').textContent = 'Applied. Check the values before relying on them.';
+    var extraction = pendingUpload;
     pendingUpload = null;
-
-    updateDpHelper();
-    applyCarryingCostRates(true);
-    applyAppreciation(true);
-    autoEstimateRent();
+    resetLocationDerivedAssumptions();
+    populateListingForm(extraction.data, {source:extraction.source});
+    $('uploadConfirm').style.display = 'none';
+    $('uploadStatus').textContent = 'Applied. Review the property and its income before continuing.';
+    await refreshAutomaticAssumptions();
+    calculate();
   }
 
   // ======================================================================
   // Zillow Scrape
   // ======================================================================
   window.fetchZillow = async function() {
+    var generation = propertyGeneration, requestId = ++scrapeRequestId;
     var url = $('zillowUrl').value.trim();
     if (!url) {
       showUrlError('Please enter a Zillow URL.');
-      return;
+      return false;
     }
     var isZillow = url.toLowerCase().indexOf('zillow.com') !== -1;
     var isRedfin = url.toLowerCase().indexOf('redfin.com') !== -1;
     if (!/^https?:\/\//i.test(url) || (!isZillow && !isRedfin)) {
       showUrlError('Invalid URL. Please enter a Zillow or Redfin listing URL.');
-      return;
+      return false;
     }
 
     $('urlError').classList.remove('visible');
@@ -707,6 +725,7 @@
       });
 
       var data = await resp.json();
+      if (generation !== propertyGeneration || requestId !== scrapeRequestId) return false;
 
       if (!resp.ok || data.error) {
         showUrlError(data.error || 'Failed to fetch property data.');
@@ -714,18 +733,24 @@
         $('uploadRow').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         if (smartAnalyzeActive && scrapedData) {
           await refreshAutomaticAssumptions();
+          if (generation !== propertyGeneration) return false;
           smartAnalyzeActive = false;
           goToStep(2);
         }
-        return;
+        return false;
       }
 
+      var baseline = smartAnalyzeActive ? verificationBaseline : {rent:data.rentZestimate || null};
       resetLocationDerivedAssumptions();
-      populateListingForm(data, {
+      generation = propertyGeneration;
+      verificationBaseline = baseline;
+      populateListingForm(Object.assign({}, data, {listingUrl:url}), {
         source: isRedfin ? 'redfin' : 'zillow',
         estimatedRent: data.rentZestimate
       });
       await refreshAutomaticAssumptions();
+      if (generation !== propertyGeneration) return false;
+      renderVerificationChanges();
 
       // Auto-advance when the listing came from either search table.
       if (smartAnalyzeActive) {
@@ -733,7 +758,9 @@
         goToStep(2);
       }
 
+      return true;
     } catch (err) {
+      if (generation !== propertyGeneration || requestId !== scrapeRequestId) return false;
       if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
         showUrlError('Could not connect to the server. Make sure the app is running (python app.py) and try again.');
         showConnectionBanner();
@@ -742,10 +769,12 @@
       }
       if (smartAnalyzeActive && scrapedData) {
         await refreshAutomaticAssumptions();
+        if (generation !== propertyGeneration) return false;
         smartAnalyzeActive = false;
         goToStep(2);
       }
     } finally {
+      if (requestId !== scrapeRequestId) return false;
       $('fetchBtn').disabled = false;
       $('fetchBtnText').textContent = 'Fetch Data';
       smartAnalyzeActive = false;
@@ -776,6 +805,30 @@
   ];
 
   function resetLocationDerivedAssumptions() {
+    propertyGeneration++;
+    if (window.HUDRentUI) HUDRentUI.reset();
+    invalidateAI(true);
+    whatifSeed = null; whatifOverrides = {};
+    verificationBaseline = null;
+    var preferences = ['investmentStrategy','targetCoC','targetCF','targetIRR','maxSubsidy','downPayment','interestRate','loanTerm','points','holdYears','sellingCostPct'];
+    SAVE_FIELDS.forEach(function(id) {
+      if (preferences.indexOf(id) >= 0) return;
+      var el = $(id);
+      if (el) el.value = el.tagName === 'SELECT' ? el.options[0].value : el.defaultValue;
+    });
+    ['propName','purchasePrice','arv','rehabBudget','sqft','yearBuilt','monthlyRent','closingCosts'].forEach(function(id) { $(id).value = ''; });
+    ['hoa','utilities','otherExpenses','otherIncome'].forEach(function(id) { $(id).value = 0; });
+    document.querySelectorAll('.unit-rent').forEach(function(el) { el.value = ''; });
+    autoFilledFields = {}; userEditedFields = {}; fieldSources = {};
+    scrapedData = null; setPropertyType('sfh');
+    $('zillowUrl').value = '';
+    $('propertyCard').classList.remove('visible');
+    $('rentEstimateSection').style.display = 'none';
+    $('estimateRentBtn').disabled = false; $('estimateRentBtn').textContent = 'Estimate Rent';
+    $('quotaGate').style.display = 'none';
+    $('verificationChanges').hidden = true;
+    $('unitRentNote').textContent = '';
+    $('scenarioName').value = '';
     carryingRates = null;
     appreciationProfile = null;
     propertyTaxPolicy = null;
@@ -793,7 +846,7 @@
     $('maintenance').value = 8;
     $('capex').value = 5;
     $('vacancy').value = 8;
-    $('valueGrowth').value = 3;
+    $('valueGrowth').value = 3.5;
     // A state-specific override must not leak into the next property.
     $('propertyTaxGrowth').value = '';
     [
@@ -832,7 +885,7 @@
     var estimatedRent = options.estimatedRent || listing.estRent || listing.rentZestimate;
 
     if (listing.listingUrl) $('zillowUrl').value = listing.listingUrl;
-    if (listing.price) {
+    if (listing.price !== null && listing.price !== undefined) {
       $('purchasePrice').value = listing.price;
       markSource('purchasePrice', source);
       $('closingCosts').value = Math.round(listing.price * 0.03);
@@ -842,9 +895,10 @@
       $('insurance').value = Math.round(listing.price * 0.005);
       userEditedFields['insurance'] = false;
     }
+    if (window.HUDRentUI) HUDRentUI.setBedrooms(listing.beds);
     if (listing.address) { $('propName').value = listing.address; markSource('propName', source); }
-    if (listing.sqft) { $('sqft').value = listing.sqft; markSource('sqft', source); }
-    if (listing.hoaFee) { $('hoa').value = listing.hoaFee; markSource('hoa', source); }
+    if (listing.sqft !== null && listing.sqft !== undefined) { $('sqft').value = listing.sqft; markSource('sqft', source); }
+    if (listing.hoaFee !== null && listing.hoaFee !== undefined) { $('hoa').value = listing.hoaFee; markSource('hoa', source); }
     if (estimatedRent) {
       $('monthlyRent').value = estimatedRent;
       markSource('monthlyRent', listing.rentSource || source);
@@ -862,6 +916,7 @@
       hoaFee: listing.hoaFee || 0,
       description: listing.description || null,
       imageUrl: listing.imageUrl || null,
+      rentConfidence:listing.rentConfidence || null, scoredRent:estimatedRent || null, rentSource:listing.rentSource || source,
       rentZestimate: listing.rentZestimate || null
     };
     fillYearBuilt(listing.yearBuilt, source);
@@ -876,12 +931,19 @@
       );
     }
 
+    if (propertyType === 'multi') {
+      var kind = String(listing.propertyType || '').toLowerCase();
+      $('unitCount').value = /fourplex|quad/.test(kind) ? '4' : /triplex/.test(kind) ? '3' : '2';
+      updateUnitVisibility();
+      $('unitRentNote').textContent = 'Enter the rent for each unit. Any listing or market total is a comparison, not a verified rent roll.';
+    }
     renderListingCard(scrapedData);
     updateDpHelper();
   }
 
   async function refreshAutomaticAssumptions(options) {
     options = options || {};
+    var generation = propertyGeneration;
     // Rent first: it supplies vacancy and gives the reserve model the best
     // available rent denominator. The remaining independent lookups can run
     // together afterward.
@@ -891,6 +953,7 @@
       !!options.preferRentcast,
       !!options.preserveSeedRent
     );
+    if (generation !== propertyGeneration) return;
     await Promise.all([
       applyCarryingCostRates(true),
       applyAppreciation(true)
@@ -906,16 +969,20 @@
     resetLocationDerivedAssumptions();
     toggleSearchMode('single');
     populateListingForm(listing, options);
+    var generation = propertyGeneration;
+    verificationBaseline = {rent:options.estimatedRent || listing.estRent || null, price:listing.price, source:options.source || 'listing'};
 
     if (listing.listingUrl) {
       smartAnalyzeActive = true;
-      await fetchZillow();
-      return;
+      return await fetchZillow();
     }
 
     await refreshAutomaticAssumptions(options);
+    if (generation !== propertyGeneration) return false;
+    renderVerificationChanges();
     smartAnalyzeActive = false;
     goToStep(options.startAtProperty ? 1 : 2);
+    return true;
   }
 
   // ======================================================================
@@ -1011,15 +1078,16 @@
         showSearchStatus('No listings found for "' + esc(location) + '". Try adjusting your filters or searching a different area.', true);
         return;
       }
-      var searchRate = parseFloat($('interestRate').value) / 100 || null;
+      var searchRate = val($('interestRate'),0,30) / 100;
       searchResults = data.listings.map(function(l) {
-        l._score = computeQuickScore(l, targetRent, searchRate);
+        l._rentOverride = targetRent || null;
+        l._score = computeQuickScore(l, targetRent, searchRate, screenPreferences());
         return l;
       });
 
       // Without a rent for a listing there is nothing to score, so say so
       // rather than rendering a page of zeroes.
-      var priced = searchResults.filter(function(l) { return l._score.numericScore > 0; });
+      var priced = searchResults.filter(function(l) { return l._score.rent > 0; });
       if (priced.length === 0) {
         showSearchStatus(
           'Found ' + searchResults.length + ' listings, but no rent estimate is available for this area. '
@@ -1050,6 +1118,39 @@
   }
 
   var computeQuickScore = window.DealEngine.computeQuickScore;
+  function readGoalPreferences() {
+    return {strategy:$('investmentStrategy').value, scoreTargets:{
+      coc:val($('targetCoC'),1,30), cashFlow:val($('targetCF'),1,5000),
+      irr:val($('targetIRR'),1,40), maxSubsidy:val($('maxSubsidy'),0,10000)
+    }};
+  }
+  function screenPreferences() {
+    return Object.assign(readGoalPreferences(), {
+      isCash:$('cashPurchase').checked, dpPct:val($('downPayment'),0,100),
+      rate:val($('interestRate'),0,30), termYears:Math.max(1,val($('loanTerm'),1,50)),
+      points:val($('points'),0,10), holdYears:Number($('holdYears').value) || 10,
+      sellingCostPct:val($('sellingCostPct'),0,20)
+    });
+  }
+  var screenScoreSignature = '';
+  function refreshGoalScores(force) {
+    var prefs = screenPreferences(), signature = JSON.stringify(prefs);
+    $('strategyDescription').textContent = {
+      cash_flow:'85% income safety · 15% hold return. Prioritizes current income and resilience when rent falls.',
+      hybrid:'60% income safety · 40% hold return. Balances current income with long-term return after selling costs.',
+      appreciation:'35% income safety · 65% hold return. Tests long-term return and how much depends on price growth.'
+    }[prefs.strategy];
+    $('screenFinancingNote').textContent = 'Search screens: ' + (prefs.isCash ? 'cash purchase' : prefs.dpPct + '% down, ' + prefs.rate + '% interest, ' + prefs.termYears + '-year loan')
+      + ' · ' + prefs.holdYears + '-year hold · ' + prefs.sellingCostPct + '% sale costs. Change financing in Loan and the hold in Assumptions. Each row lists its estimated costs.';
+    if (!force && signature === screenScoreSignature) return;
+    screenScoreSignature = signature;
+    searchResults.forEach(function(l) { l._score = computeQuickScore(l,l._rentOverride,prefs.rate/100,prefs); });
+    smartResults.forEach(function(l) { l._score = computeQuickScore(l,0,prefs.rate/100,prefs); });
+    if (searchResults.length) sortAndRenderSearch();
+    if (smartResults.length) sortSmartAndRender();
+    if (batchResults.length) { refreshBatchMarketAnalyses(); sortAndRenderBatch(); }
+  }
+
 
   function sortAndRenderSearch() {
     searchResults.sort(function(a, b) {
@@ -1102,7 +1203,7 @@
         && (!alertMaxPrice || (l.price && l.price <= alertMaxPrice))
         && (!alertMinBeds || (l.beds && l.beds >= alertMinBeds));
       var trClass = (alertStars > 0 || alertMaxPrice || alertMinBeds) && meetsAlert ? ' class="meets-alert"' : '';
-      var alertTag = meetsAlert && (alertStars > 0 || alertMaxPrice || alertMinBeds) ? '<span class="alert-badge">Match</span>' : '';
+      var alertTag = meetsAlert && (alertStars > 0 || alertMaxPrice || alertMinBeds) ? '<span class="alert-badge">Filter match</span>' : '';
 
       var addrLink = l.listingUrl
         ? '<a href="' + esc(l.listingUrl) + '" target="_blank" rel="noopener">' + esc(l.address || '—') + '</a>'
@@ -1113,21 +1214,23 @@
         + '<td>$' + (l.price ? fmtInt(l.price) : '—') + '</td>'
         + '<td>' + (l.beds != null ? l.beds : '—') + ' / ' + (l.baths != null ? l.baths : '—') + '</td>'
         + '<td>' + (l.sqft ? fmtInt(l.sqft) : '—') + '</td>'
-        + '<td><span class="quick-score ' + s.cssClass + '">' + starStr + '</span><div class="score-detail">' + detailHtml + '</div></td>'
+        + searchMetricCells(l)
+        + '<td><span class="quick-score ' + s.cssClass + '">' + starStr + ' <span class="score-num">' + s.numericScore + '/100</span></span>' + scoreDetailsHTML(s) + '</td>'
         + '<td><button class="btn" onclick="analyzeFromSearch(' + i + ')">Analyze &rarr;</button></td>'
         + '</tr>';
     });
     if (filterGood && shown === 0) {
-      html = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">No listings with 3+ stars. Try a higher target rent or lower price range.</td></tr>';
+      html = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-muted);">No listings with 3+ stars. Review the assumptions or broaden the search.</td></tr>';
     }
     tbody.innerHTML = html;
+    scheduleDraft();
   }
 
   window.analyzeFromSearch = function(idx) {
     var listing = searchResults[idx];
     return analyzeListing(listing, {
       source: 'redfin',
-      estimatedRent: listing && listing.estRent,
+      estimatedRent: listing && (listing._rentOverride || listing.estRent),
       origin: 'find/neighborhood'
     });
   };
@@ -1172,6 +1275,7 @@
       var body = {
         location: location,
         min_beds: parseInt($('smartMinBeds').value) || 0,
+        max_price: optionalVal($('smartMaxPrice'), 0),
         property_type: $('smartPropType').value || null,
         max_results: parseInt($('smartMaxResults').value) || 25,
         allow_overage: allowOverage || rentcastAllowOverage,
@@ -1209,7 +1313,7 @@
           }
         }
         if (data.smart_max_price) {
-          rentHtml += '<br>Smart price cap: <strong>$' + fmtInt(data.smart_max_price) + '</strong> (only showing properties that could pencil out)';
+          rentHtml += '<br>Your price limit: <strong>$' + fmtInt(data.smart_max_price) + '</strong>';
         }
         if (data.rent_confidence) {
           var confLabel = data.rent_confidence === 'high' ? 'High' : data.rent_confidence === 'medium' ? 'Medium' : 'Low';
@@ -1217,13 +1321,9 @@
           rentHtml += ' &middot; Rent confidence: <span class="' + confCls + '">' + confLabel + '</span>';
         }
         if (data.mortgage_rate) {
-          rentHtml += ' &middot; Scoring at <strong>' + data.mortgage_rate.toFixed(2) + '%</strong> rate';
+          rentHtml += ' &middot; Market rate reference <strong>' + data.mortgage_rate.toFixed(2) + '%</strong> rate';
         }
-        var apprNote = data.appreciation
-          ? data.appreciation.conservative_pct + '% appreciation (held near inflation; ' +
-            data.appreciation.label + ' averaged ' + data.appreciation.rate_pct + '%)'
-          : '3% appreciation';
-        rentHtml += '<br><span style="color:var(--text-muted);font-size:0.78rem;">Assumptions: ' + Math.round(INVESTOR_DOWN_PAYMENT * 100) + '% down, 30yr fixed, expenses 45-55% of rent (tiered by price), ' + apprNote + '</span>';
+        rentHtml += '<br><span style="color:var(--text-muted);font-size:0.78rem;">Scores use your selected goal and financing. Expand each score for its cost assumptions. Results cover the retrieved listings, not every property in the area.</span>';
         $('smartRentDetails').innerHTML = rentHtml;
         $('smartRentInfo').style.display = '';
       }
@@ -1232,7 +1332,7 @@
       var smartRate = data.mortgage_rate ? data.mortgage_rate / 100 : null;
       smartResults = data.listings.map(function(l) {
         var rent = l.estRent || 0;
-        l._score = computeQuickScore(l, rent, smartRate);
+        l._score = computeQuickScore(l, 0, smartRate, screenPreferences());
         l._estRent = rent;
         return l;
       });
@@ -1313,16 +1413,19 @@
         + '<td>$' + (l.price ? fmtInt(l.price) : '—') + '</td>'
         + '<td>' + (l.beds != null ? l.beds : '—') + ' / ' + (l.baths != null ? l.baths : '—') + '</td>'
         + '<td>' + (l._estRent ? '$' + fmtInt(l._estRent) + '/mo' : '—') + '</td>'
-        + '<td><span class="quick-score ' + s.cssClass + '">' + starStr + scoreLabel + '</span><div class="score-detail">' + detailHtml + '</div></td>'
+        + '<td>' + (s.monthlyCashFlow !== undefined ? fmtDollar(s.monthlyCashFlow) + '/mo' : 'Unscored') + '</td>'
+        + '<td>' + rentEvidenceHTML(l) + '</td>'
+        + '<td><span class="quick-score ' + s.cssClass + '">' + starStr + scoreLabel + '</span>' + scoreDetailsHTML(s) + '</td>'
         + '<td><button class="btn" onclick="analyzeFromSmart(' + i + ')">Analyze &rarr;</button></td>'
         + '</tr>';
     });
     if (shown === 0 && filterGood) {
-      html = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">No 4+ star deals found. Uncheck "Good deals only" to see all listings ranked by score, or try a different area with higher rent-to-price ratios.</td></tr>';
+      html = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">No listings score 60 or higher for this goal. Uncheck the score filter to review all results and their assumptions.</td></tr>';
     } else if (shown === 0) {
-      html = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">No listings found. Try a different location or adjust filters.</td></tr>';
+      html = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">No listings found. Try a different location or adjust filters.</td></tr>';
     }
     tbody.innerHTML = html;
+    scheduleDraft();
   };
 
   window.analyzeFromSmart = function(idx) {
@@ -1362,7 +1465,8 @@
     }
     $('batchImportBtn').disabled = true;
     $('batchImportBtnText').innerHTML = '<span class="spinner"></span> Importing...';
-    $('batchResultsContainer').style.display = 'none';
+    pendingBatchImport = null;
+    $('batchImportPreview').hidden = true;
     showBatchStatus(
       $('batchAugmentBrochures').checked
         ? 'Importing inventory and reading linked public brochures...'
@@ -1373,7 +1477,7 @@
       var body = {
         sheet_url: sheetUrl || null,
         csv_text: file ? await readTextFile(file) : null,
-        augment_brochures: $('batchAugmentBrochures').checked
+        augment_brochures: false
       };
       var response = await fetch('/api/batch-review/import', {
         method: 'POST',
@@ -1385,20 +1489,17 @@
         showBatchStatus(data.error || 'Could not import this inventory.', true);
         return;
       }
-      batchResults = data.deals || [];
-      batchSortCol = 'stabilized_coc_pct';
-      batchSortAsc = false;
-      sortAndRenderBatch();
-      $('batchResultsTitle').textContent = batchResults.length + ' imported deals'
-        + (data.sheet_name ? ' — ' + data.sheet_name : '');
-      $('batchResultsContainer').style.display = '';
-      showBatchStatus(
-        'Imported ' + batchResults.length + ' deals'
-        + (data.augmented_count ? ' and augmented ' + data.augmented_count + ' brochures' : '')
-        + (data.llm_augmented_count ? ' (' + data.llm_augmented_count + ' needed LLM fallback)' : '')
-        + '. Seller claims remain separate from calculated screens.',
-        false
-      );
+      pendingBatchImport = data;
+      var mapping = Object.values(data.mapping || {});
+      $('batchPreviewSummary').textContent = (data.deals || []).length + ' deals found · ' +
+        (data.skipped_rows || 0) + ' rows skipped' + (data.truncated ? ' · import limit reached' : '') +
+        '. Recognized columns: ' + (mapping.length ? mapping.join(', ') : 'Address, price and available property fields') + '.';
+      $('batchPreviewRows').innerHTML = '<table class="snapshot-table"><thead><tr><th>Address</th><th>Price</th><th>Stated rent</th></tr></thead><tbody>' +
+        (data.deals || []).slice(0,5).map(function(d) { return '<tr><td>' + esc(d.address || '') + '</td><td>' +
+          fmtDollar(Number(d.price) || 0) + '</td><td>' + (d.monthly_rent ? fmtDollar(d.monthly_rent) : 'Not provided') + '</td></tr>'; }).join('') + '</tbody></table>';
+      $('batchImportPreview').hidden = false;
+      $('batchImportPreview').querySelector('button').disabled = !(data.deals || []).length;
+      showBatchStatus('Review the preview, then confirm to replace the current inventory.', false);
     } catch (error) {
       showBatchStatus(error.message || 'Could not connect to the server.', true);
     } finally {
@@ -1409,6 +1510,7 @@
 
   window.augmentBatchBrochures = async function() {
     if (!batchResults.length) return;
+    var revision = batchRevision;
     var button = $('batchAugmentBtn');
     button.disabled = true;
     button.textContent = 'Reading brochures...';
@@ -1420,11 +1522,12 @@
         body: JSON.stringify({ deals: batchResults })
       });
       var data = await response.json();
+      if (revision !== batchRevision) return;
       if (!response.ok || data.error) {
         showBatchStatus(data.error || 'Brochure augmentation failed.', true);
         return;
       }
-      batchResults = data.deals || batchResults;
+      batchResults = mergeBatchResults(data.deals || batchResults);
       sortAndRenderBatch();
       showBatchStatus(
         'Augmented ' + (data.augmented_count || 0) + ' brochures'
@@ -1442,6 +1545,7 @@
 
   window.runBatchMarketEstimates = async function(allowOverage) {
     if (!batchResults.length) return;
+    var revision = batchRevision;
     var button = $('batchMarketBtn');
     button.disabled = true;
     button.textContent = 'Estimating by ZIP...';
@@ -1455,10 +1559,12 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deals: batchResults,
+          mortgage_rate_pct: val($('interestRate'), 0, 30),
           allow_overage: allowOverage || rentcastAllowOverage
         })
       });
       var data = await response.json();
+      if (revision !== batchRevision) return;
       if (data.rentcast_usage) updateUsageDisplay(data.rentcast_usage);
       if (data.quota_gate) {
         showQuotaGate(data.quota_gate, function(ok) { runBatchMarketEstimates(ok); });
@@ -1467,7 +1573,13 @@
         showBatchStatus(data.error || 'ZIP estimates failed.', true);
         return;
       }
-      batchResults = data.deals || batchResults;
+      batchResults = mergeBatchResults(data.deals || batchResults);
+      batchResults.forEach(function(deal) {
+        if (deal.market_screen && deal.market_screen.mortgage_rate_pct == null && data.mortgage_rate != null) {
+          deal.market_screen.mortgage_rate_pct = data.mortgage_rate;
+        }
+        deal.market_rate_source = data.mortgage_rate_source || 'market';
+      });
       batchSortCol = 'market_analysis.dealPoints';
       batchSortAsc = false;
       sortAndRenderBatch();
@@ -1475,7 +1587,7 @@
         'Screened ' + (data.screened_count || 0) + ' deals across '
         + (data.zip_count || 0) + ' ZIP codes at '
         + (data.mortgage_rate ? data.mortgage_rate.toFixed(2) + '%' : 'the current entered rate')
-        + '. Use Verify & Analyze for a property-specific RentCast estimate.',
+        + ' (' + (data.mortgage_rate_source || 'market') + ' rate). Use Verify & Analyze for a property-specific RentCast estimate.',
         false
       );
     } catch (error) {
@@ -1527,11 +1639,11 @@
     var insurance = deal.market_insurance || {};
     var fullAnalysis = computeDeal({
       price: price, arv: price, closingCosts: price * 0.03, rehab: 0,
-      valueGrowthPct: nullableNumber(appreciation.conservative_pct) === null
-        ? 2.5 : Number(appreciation.conservative_pct),
+      valueGrowthPct: nullableNumber(appreciation.rate_pct) === null
+        ? 3.5 : Number(appreciation.rate_pct),
       isCash: false, dpPct: nullableNumber(screen.down_payment_pct) === null
         ? 25 : Number(screen.down_payment_pct),
-      rate: nullableNumber(screen.mortgage_rate_pct) || 0,
+      rate: nullableNumber(screen.mortgage_rate_pct) === null ? val($('interestRate'), 0, 30) : Number(screen.mortgage_rate_pct),
       termYears: 30, points: 0, totalRent: rent, otherIncome: 0,
       incomeGrowthPct: 2, taxesYr: nullableNumber(tax.annual) || 0,
       taxGrowthOverridePct: null,
@@ -1544,14 +1656,17 @@
         ? 8 : Number(screen.management_pct),
       hoaMonth: 0, utilMonth: 0, otherExpMonth: 0, expGrowthPct: 2,
       sqft: nullableNumber(deal.sqft) || 0, buildingPct: 80,
-      sellingCostPct: 7, holdYears: 10, propertyType: 'sfh', unitCount: 1,
+      sellingCostPct: val($('sellingCostPct'),0,20), holdYears: Number($('holdYears').value) || 10, propertyType: 'sfh', unitCount: 1,
       appreciationProfile: appreciation, projectionStartYear: new Date().getFullYear(),
+      strategy:readGoalPreferences().strategy, scoreTargets:readGoalPreferences().scoreTargets,
+      scoreEvidence:Number(deal.market_rent_sample_size) >= 5 && Number(deal.beds) > 0 ? 'estimated' : 'low',
       incentives: activeBatchIncentives(deal)
     });
     // Keep only the score contract on each row. Persisting thirty projection
     // years and a full amortization table on every batch item would bloat
     // subsequent brochure/enrichment requests without adding information.
     deal.market_analysis = {
+      strategy:fullAnalysis.strategy, dealExpl:fullAnalysis.dealExpl,
       dealPoints: fullAnalysis.dealPoints,
       dealMaxPoints: fullAnalysis.dealMaxPoints,
       dealGrade: fullAnalysis.dealGrade,
@@ -1655,8 +1770,9 @@
         ? '<strong class="balanced-score ' + esc(analysis.dealGrade || '') + '">'
           + analysis.dealPoints + '/100</strong>'
           + '<div class="batch-deal-meta">Income ' + analysis.incomeSafetyScore
-          + ' · 10yr ' + analysis.holdPerformanceScore + '</div>'
-          + '<div class="batch-deal-meta">ZIP market-screen estimate</div>'
+          + ' · ' + analysis.holdYears + 'yr ' + analysis.holdPerformanceScore + '</div>'
+          + '<div class="batch-deal-meta">' + esc((analysis.strategy || 'hybrid') + ' · Provisional ZIP screen') + '</div>'
+          + '<details class="score-reasons"><summary>Score limits</summary><p>' + esc(analysis.dealExpl || '') + '</p></details>'
         : '<span class="batch-deal-meta">Run ZIP Estimates</span>';
       html += '<tr>'
         + '<td><div class="batch-deal-name">' + esc(deal.address || '—') + '</div>'
@@ -1683,7 +1799,10 @@
     });
     if (!html) html = '<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--text-muted);">No priced deals were found.</td></tr>';
     $('batchResultsBody').innerHTML = html;
+    decorateBatchResults();
   }
+
+  window.renderBatchView = function() { renderBatchResults(); };
 
   window.selectBatchIncentive = function(index, incentiveId) {
     var deal = batchResults[index];
@@ -1744,6 +1863,8 @@
   window.analyzeFromBatch = async function(index) {
     var deal = batchResults[index];
     if (!deal) return;
+    deal.verification_status = 'Checking…'; renderBatchResults();
+    var revision = batchRevision;
     var rentSource = (deal.field_sources || {}).monthly_rent;
     var hasVerifiedLeaseRent = deal.lease_verified === true && !!deal.monthly_rent
       && (rentSource === 'brochure' || rentSource === 'brochure_llm')
@@ -1760,7 +1881,7 @@
       rentSource: deal.monthly_rent ? (rentSource || 'seller_sheet') : null,
       source: 'seller_sheet'
     };
-    await analyzeListing(listing, {
+    var applied = await analyzeListing(listing, {
       source: 'seller_sheet',
       estimatedRent: deal.monthly_rent,
       preferRentcast: deal.address_quality === 'exact',
@@ -1768,6 +1889,7 @@
       startAtProperty: true,
       origin: 'batch'
     });
+    if (applied === false || revision !== batchRevision) return;
     activeDealIncentives = activeBatchIncentives(deal);
     var pm = activeDealIncentives.find(function(item) {
       return item.type === 'property_management_discount';
@@ -1794,6 +1916,10 @@
     };
     renderActiveDealIncentives();
     calculate();
+    var hasMarketRent = ['rentcast_avm','rentcast_market','redfin'].indexOf(fieldSources.monthlyRent) >= 0;
+    deal.verification_status = hasMarketRent ? 'Estimates checked — review inputs' : 'Review required — rent not independently estimated';
+    deal.property_check = {rent:getTotalRent(), monthly_cash_flow:lastCalcResults.monthlyCF, checked_at:new Date().toISOString()};
+    renderBatchResults(); renderVerificationChanges(); saveDraft();
   };
 
   window.exportBatchCSV = function() {
@@ -1803,8 +1929,8 @@
       'Initial Cash', 'Year-1 CoC', 'Stabilized Monthly Cash Flow',
       'Stabilized CoC', 'ZIP', 'Market Rent', 'Market Rent Source',
       'Market Monthly Cash Flow', 'Market CoC', 'Market Cap Rate', 'Market DSCR',
-      'Balanced Score', 'Income Safety Score', '10-Year Performance Score',
-      'Avg Annual Operating CoC', 'Cash-Flow Positive Years', '10-Year Pre-Tax IRR',
+      'Strategy', 'Hold Years', 'Goal Score', 'Income Safety Score', 'Hold Performance Score',
+      'Avg Annual Operating CoC', 'Cash-Flow Positive Years', 'Hold Pre-Tax IRR',
       'Annual Property Tax', 'Annual Insurance', 'Vacancy', 'Maintenance', 'CapEx',
       'Address Quality', 'Confidence', 'Incentives', 'Warnings', 'Brochure URL'
     ]];
@@ -1817,6 +1943,7 @@
         deal.market_rent_source, (deal.market_screen || {}).monthly_cash_flow,
         (deal.market_screen || {}).cash_on_cash_pct,
         (deal.market_screen || {}).cap_rate_pct, (deal.market_screen || {}).dscr,
+        (deal.market_analysis || {}).strategy, (deal.market_analysis || {}).holdYears,
         (deal.market_analysis || {}).dealPoints,
         (deal.market_analysis || {}).incomeSafetyScore,
         (deal.market_analysis || {}).holdPerformanceScore,
@@ -1882,68 +2009,27 @@
   // ======================================================================
   // Export Smart Deal Finder Results to CSV
   // ======================================================================
-  window.exportSmartCSV = function() {
-    if (!smartResults || smartResults.length === 0) return;
-    var rows = [['Address', 'Price', 'Beds', 'Baths', 'Sqft', 'Est. Rent', 'Stars', 'Score', 'Rent/Price', 'Est. Cap Rate', 'Est. Cash Flow', 'GRM', 'Est. Return', 'Listing URL']];
-    smartResults.forEach(function(l) {
-      var s = l._score || { stars: 0, numericScore: 0, details: [] };
-      var d = s.details || [];
-      rows.push([
-        '"' + (l.address || '').replace(/"/g, '""') + '"',
-        l.price || '',
-        l.beds != null ? l.beds : '',
-        l.baths != null ? l.baths : '',
-        l.sqft || '',
-        l._estRent || '',
-        s.stars,
-        s.numericScore,
-        d[0] ? d[0].text : '',
-        d[1] ? d[1].text : '',
-        d[2] ? d[2].text : '',
-        d[3] ? d[3].text : '',
-        d[4] ? d[4].text : '',
-        '"' + (l.listingUrl || '').replace(/"/g, '""') + '"'
-      ]);
+  function exportScoredListings(listings, filename) {
+    if (!listings.length) return;
+    var rows = [['Address','Price','Beds','Baths','Sqft','Est. Rent','Rent Source','Rent Confidence','Rent Sample Size',
+      'Strategy','Hold Years','Stars','Goal Score','Est. Cash Flow','Provisional','Scoring Assumptions','Listing URL']];
+    listings.forEach(function(l) {
+      var score = l._score || {};
+      rows.push([l.address,l.price,l.beds,l.baths,l.sqft,score.rent || l.estRent,
+        l._rentOverride ? 'manual_override' : l.rentSource,l._rentOverride ? 'manual' : l.rentConfidence,
+        l._rentOverride ? '' : l.rentSampleSize,score.strategy,score.scoreHoldYears,score.stars,
+        score.numericScore,score.monthlyCashFlow,true,(score.details || []).map(function(d) {return d.text;}).join(' | '),l.listingUrl]);
     });
-    var csv = rows.map(function(r) { return r.join(','); }).join('\n');
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var csv = rows.map(function(row) {return row.map(function(value) {
+      return '"' + String(value == null ? '' : value).replace(/"/g,'""') + '"';
+    }).join(',');}).join('\n');
     var link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'smart-deal-finder-results.csv';
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
-
-  // Export Search Results to CSV
-  // ======================================================================
-  window.exportSearchCSV = function() {
-    if (!searchResults || searchResults.length === 0) return;
-    var rows = [['Address', 'Price', 'Beds', 'Baths', 'Sqft', 'Stars', 'Rent/Price', 'Est. Cap Rate', 'Est. Cash Flow', 'GRM', 'Listing URL']];
-    searchResults.forEach(function(l) {
-      var s = l._score || { stars: 0, details: [] };
-      var details = s.details || [];
-      rows.push([
-        '"' + (l.address || '').replace(/"/g, '""') + '"',
-        l.price || '',
-        l.beds != null ? l.beds : '',
-        l.baths != null ? l.baths : '',
-        l.sqft || '',
-        s.stars,
-        details[0] ? details[0].text : '',
-        details[1] ? details[1].text : '',
-        details[2] ? details[2].text : '',
-        details[3] ? details[3].text : '',
-        '"' + (l.listingUrl || '').replace(/"/g, '""') + '"'
-      ]);
-    });
-    var csv = rows.map(function(r) { return r.join(','); }).join('\n');
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    var link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'neighborhood-search-results.csv';
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
+    link.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+    link.download = filename; link.click();
+    setTimeout(function() {URL.revokeObjectURL(link.href);},1000);
+  }
+  window.exportSmartCSV = function() { exportScoredListings(smartResults,'smart-deal-finder-results.csv'); };
+  window.exportSearchCSV = function() { exportScoredListings(searchResults,'neighborhood-search-results.csv'); };
 
   // ======================================================================
   // Saved Search Filters (localStorage)
@@ -2023,6 +2109,7 @@
   }
 
   window.fetchRentEstimate = async function(allowOverage, skipRentcast) {
+    var generation = propertyGeneration;
     var btn = $('estimateRentBtn');
     btn.textContent = '...';
     btn.disabled = true;
@@ -2063,6 +2150,7 @@
       );
       var resp = result.resp;
       var data = result.data;
+      if (generation !== propertyGeneration) return;
       if (data.usage) updateUsageDisplay(data.usage);
       if (!resp.ok || data.error) {
         alert(data.error || ('Rent estimate failed (HTTP ' + resp.status + ').'));
@@ -2104,8 +2192,7 @@
           el.style.cursor = 'pointer';
           el.onclick = function() {
             var val = el.querySelector('.rent-value').textContent.replace(/[^0-9]/g, '');
-            $('monthlyRent').value = val;
-            calculate();
+            applySuggestedRent(Number(val));
             applyCarryingCostRates(true);
           };
         });
@@ -2157,7 +2244,7 @@
 
   function applyRentEstimate(est, comps, preserveCurrentRent) {
     if (!est || !est.rent) return;
-    if (!preserveCurrentRent && !userEditedFields['monthlyRent']) {
+    if (propertyType === 'sfh' && !preserveCurrentRent && !userEditedFields['monthlyRent']) {
       $('monthlyRent').value = est.rent;
       markSource('monthlyRent', est.source || 'rentcast_avm');
     }
@@ -2190,8 +2277,7 @@
     $('rentEstimateStats').querySelectorAll('.rent-stat').forEach(function(el) {
       el.style.cursor = 'pointer';
       el.onclick = function() {
-        $('monthlyRent').value = el.querySelector('.rent-value').textContent.replace(/[^0-9]/g, '');
-        calculate();
+        applySuggestedRent(inputNumber(el.querySelector('.rent-value').textContent));
       };
     });
     if (typeof calculate === 'function') calculate();
@@ -2199,6 +2285,7 @@
 
   // Fires automatically on Analyze so rent is never a manual step.
   async function autoEstimateRent(allowOverage, skipRentcast, preferRentcast, preserveCurrentRent) {
+    var generation = propertyGeneration;
     if (userEditedFields['monthlyRent']) return;
     var address = (scrapedData && scrapedData.address) || $('propName').value.trim();
     if (!address) return;
@@ -2210,6 +2297,7 @@
       );
       var resp = result.resp;
       var data = result.data;
+      if (generation !== propertyGeneration || address !== $('propName').value.trim()) return;
       if (data.usage) updateUsageDisplay(data.usage);
       if (!resp.ok || data.error) return;
       if (data.quota_gate) {
@@ -2381,6 +2469,8 @@
   function readInputs() {
     var isCash = $('cashPurchase').checked;
     return {
+      strategy:readGoalPreferences().strategy, scoreTargets:readGoalPreferences().scoreTargets,
+      scoreEvidence:!userEditedFields.monthlyRent && scrapedData && scrapedData.rentConfidence === 'low' && scrapedData.scoredRent === getTotalRent() && scrapedData.rentSource === fieldSources.monthlyRent ? 'low' : 'entered',
       price: val($('purchasePrice'), 0),
       arv: val($('arv'), 0),
       closingCosts: val($('closingCosts'), 0),
@@ -2421,9 +2511,20 @@
   }
 
   function calculate() {
+    if (window.AppNavigation) AppNavigation.refreshPropertyContext();
+    if (window.HUDRentUI) HUDRentUI.syncProperty();
     var inputs = readInputs();
     lastCalcResults = computeDeal(inputs);
     lastTaxContext = computeTaxContext(inputs);
+    refreshGoalScores();
+    invalidateAI(false);
+    if (whatifSeed && JSON.stringify(whatifSeed) !== JSON.stringify(inputs)) {
+      whatifSeed = cloneData(inputs);
+      if (currentResultsView === 'whatif') { renderWhatifSliders(); whatifRecalc(); }
+    }
+    renderInputConfidence();
+    renderVerificationChanges();
+    scheduleDraft();
     // Only update DOM if on step 6 — unchanged from before the split.
     if (currentStep === 6) renderResults();
     formatCurrencyInputs();
@@ -2578,7 +2679,7 @@
     }
     pillars.forEach(function(p) {
       var valClass = p.val >= 0 ? 'positive' : 'negative';
-      // The base case is conservative by design, so the historical figure sits
+      // When the selected rate differs, the historical comparison sits
       // beside it rather than a click away — the upside is not a reward for
       // going looking.
       var altText = (p.alt !== null && p.alt !== undefined && histRate)
@@ -2620,28 +2721,23 @@
           + '</div>';
       }
       var icon = factorIcons[f.verdict] || '';
-      factorHtml += '<div class="factor-row"><div class="factor-dot ' + f.verdict + '" title="' + f.verdict + '">' + icon + '</div><div class="factor-name">' + f.name + '</div><div class="factor-val">' + f.value + '</div><div class="factor-reason">' + f.reason + '</div></div>';
+      factorHtml += '<div class="factor-row"><div class="factor-dot ' + f.verdict + '" title="' + f.verdict + '">' + icon + '</div><div class="factor-name">' + f.name + '</div><div class="factor-val">' + f.value + '</div><div class="factor-reason">' + f.reason + ' · ' + f.points + '/' + f.maxPoints + ' points</div></div>';
     });
     $('factorList').innerHTML = factorHtml;
 
-    // Strategy fit
-    var stratHtml = '';
-    // Cash Flow strategy
-    var cfGood = r.coc >= 8 && r.monthlyCFPerUnit >= 200 && (r.dscr === null || r.dscr >= 1.25);
-    var cfOk = r.coc >= 4 && r.monthlyCFPerUnit >= 100;
-    stratHtml += '<div class="strategy-card"><div class="strat-title">Cash Flow</div><div class="strat-fit ' + (cfGood ? 'good' : (cfOk ? 'good' : 'poor')) + '">' + (cfGood ? 'Strong Fit' : (cfOk ? 'Moderate Fit' : 'Poor Fit')) + '</div><div class="strat-detail">CoC ' + fmtPct(r.coc) + ', ' + fmtDollar(r.monthlyCFPerUnit) + '/unit' + (r.dscr !== null ? ', DSCR ' + fmt(r.dscr) : '') + '</div></div>';
-
-    // Wealth Building strategy
-    var totalReturnPct = r.totalCashInvested > 0 ? r.preTaxProfit / r.totalCashInvested * 100 : 0;
-    var wbGood = totalReturnPct >= 50;
-    var wbOk = totalReturnPct >= 25;
-    stratHtml += '<div class="strategy-card"><div class="strat-title">Wealth Building</div><div class="strat-fit ' + (wbGood ? 'good' : (wbOk ? 'good' : 'poor')) + '">' + (wbGood ? 'Strong Fit' : (wbOk ? 'Moderate Fit' : 'Poor Fit')) + '</div><div class="strat-detail">' + (r.holdYears || 5) + 'yr return ' + fmtPct(totalReturnPct) + ', appreciation ' + fmtDollar(r.totalReturnAppreciation) + '</div></div>';
-
-    // Low Risk strategy
-    var lrGood = r.breakeven <= 75 && (r.dscr === null || r.dscr >= 1.5) && r.fiftyPctRatio <= 50;
-    var lrOk = r.breakeven <= 85 && (r.dscr === null || r.dscr >= 1.25);
-    stratHtml += '<div class="strategy-card"><div class="strat-title">Low Risk</div><div class="strat-fit ' + (lrGood ? 'good' : (lrOk ? 'good' : 'poor')) + '">' + (lrGood ? 'Strong Fit' : (lrOk ? 'Moderate Fit' : 'Poor Fit')) + '</div><div class="strat-detail">Break-even ' + fmtPct(r.breakeven) + (r.dscr !== null ? ', DSCR ' + fmt(r.dscr) : '') + ', OER ' + fmtPct(r.oer) + '</div></div>';
-    $('strategyNotes').innerHTML = stratHtml;
+    // Compare strategies on identical inputs, including the same risk limits.
+    var strategyInputs = readInputs();
+    $('strategyNotes').innerHTML = ['cash_flow','hybrid','appreciation'].map(function(strategy) {
+      var fit = strategy === r.strategy ? r : computeDeal(Object.assign({},strategyInputs,{strategy:strategy}));
+      return '<div class="strategy-card' + (strategy === r.strategy ? ' selected' : '') + '"><div class="strat-title">'
+        + esc(fit.scoreProfile) + (strategy === r.strategy ? ' · Selected' : '') + '</div><div class="strat-fit '
+        + (fit.dealPoints >= 75 ? 'good' : 'poor') + '">' + fit.dealPoints + '/100</div><div class="strat-detail">'
+        + esc(fit.dealText) + '</div></div>';
+    }).join('') + '<p class="usage-note" style="display:block;grid-column:1/-1">Scoring IRR '
+      + (r.scoringIRR == null ? 'N/A' : fmtPct(r.scoringIRR)) + ' at ' + r.scoreAppreciationPct + '% value / '
+      + r.scoreRentGrowthPct + '% rent growth. No-appreciation IRR ' + (r.scoreFlatIRR == null ? 'N/A' : fmtPct(r.scoreFlatIRR))
+      + '. Downside cash flow ' + fmtDollar(r.scoreStressCF) + '/mo; total negative cash flow across the hold '
+      + fmtDollar(r.scoreStressFunding) + ' in addition to upfront cash. This is a stress scenario, not a probability estimate.</p>';
 
     // E) Projection — projRows always runs 30 years for the what-if page, so
     // trim it to the holding period actually being analysed.
@@ -2806,13 +2902,12 @@
         '-year stretch on record, a $' + fmtInt(r.price) + ' property fell to <strong>$' +
         fmtInt(b.worst) + '</strong> \u2014 a ' + Math.round(Math.abs(b.worstPct)) + '% loss.</div>';
     }
-    html += '<div class="exit-note">Downturn and Strong are the 10th and 90th percentile of every ' +
+    html += '<div class="exit-note">Downturn and Strong use the 10th and 90th percentile spreads, recentered on the market rate, from every ' +
       'overlapping ' + (b.bandYears || 5) + '-year window in ' + b.label +
       ' (FHFA repeat-sales index, ' + b.window + ')' +
       ((b.bandYears || 5) < hy ? ' \u2014 the longest window with enough history for a ' + hy + '-year hold' : '') + '. ' +
-      'The default sits near long-run inflation rather than at the historical average, so a deal has ' +
-      'to work on cash flow and any real appreciation is upside \u2014 switch to Historical to see what ' +
-      'this area actually did.</div>';
+      'The default uses the local historical market rate. Choose Conservative for a lower-growth ' +
+      'assumption, or enter your own rate. Historical outcomes are not forecasts.</div>';
     el.innerHTML = html;
     el.style.display = '';
   }
@@ -3006,6 +3101,7 @@
     renderWhatifHeadline(base, now);
     renderWhatifTable(now);
     renderWhatifChart(now);
+    scheduleDraft();
     var moved = whatifMovedKeys();
     // Counts per group, so a collapsed group still advertises what is changed
     // inside it. Updated here rather than by re-rendering, which would tear
@@ -3397,6 +3493,7 @@
     m += 'Annualized Pre-Tax ROI: ' + fmtPct(r.preTaxAnnualizedROI) + '\n';
     m += 'Pre-Tax IRR: ' + (r.preTaxIRR !== null ? fmtPct(r.preTaxIRR) : 'N/A') + '\n';
     m += 'Deal Score: ' + r.dealText + ' (' + r.dealPoints + '/' + r.dealMaxPoints + ' points)\n';
+    m += r.dealExpl + '\nDownside monthly cash flow: ' + fmtDollar(r.scoreStressCF) + '; total negative cash flow over hold: ' + fmtDollar(r.scoreStressFunding) + '\n';
     r.dealFactors.forEach(function(f) {
       m += '  ' + f.name + ': ' + f.value + ' [' + f.verdict.toUpperCase() + '] — ' + f.reason + '\n';
     });
@@ -3418,6 +3515,14 @@
   }
 
   window.runAI = async function() {
+    if (!validateStep(6, true)) return;
+    calculate();
+    if (aiController) aiController.abort();
+    aiController = new AbortController();
+    var controller = aiController, runId = ++aiRunId;
+    var signature = analysisSignature();
+    aiInputSignature = signature; aiCompletedAt = null;
+    $('aiStatus').textContent = 'Analyzing the current inputs…';
     $('aiError').classList.remove('visible');
     $('aiOutput').classList.remove('visible');
     $('aiOutput').innerHTML = '';
@@ -3432,7 +3537,7 @@
       var resp = await fetch('/api/analyze-ai-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ metrics: metricsText, model: selectedModel })
+        body: JSON.stringify({ metrics: metricsText, model: selectedModel }), signal: controller.signal
       });
 
       if (!resp.ok) {
@@ -3449,6 +3554,7 @@
 
       while (true) {
         var result = await reader.read();
+        if (runId !== aiRunId || signature !== analysisSignature()) return;
         if (result.done) break;
         buffer += decoder.decode(result.value, { stream: true });
 
@@ -3460,33 +3566,42 @@
           if (!line.startsWith('data: ')) continue;
           var payload = line.slice(6);
           if (payload === '[DONE]') continue;
-          try {
-            var evt = JSON.parse(payload);
-            if (evt.token) {
-              fullText += evt.token;
-              $('aiOutput').innerHTML = renderMarkdown(fullText);
-            }
-          } catch(e) {}
+          var evt;
+          try { evt = JSON.parse(payload); } catch(e) { continue; }
+          if (evt.error) throw new Error(evt.error);
+          if (evt.token) {
+            fullText += evt.token;
+            $('aiOutput').innerHTML = renderMarkdown(fullText);
+          }
         }
       }
 
+      if (runId !== aiRunId || signature !== analysisSignature()) return;
       if (!fullText.trim()) {
         throw new Error('No response received from AI.');
       }
+      aiCompletedAt = new Date().toISOString();
+      $('aiStatus').textContent = 'Analyzed ' + new Date(aiCompletedAt).toLocaleString() + ' · current inputs';
     } catch (err) {
+      if (runId !== aiRunId || err.name === 'AbortError') return;
+      $('aiStatus').textContent = 'Analysis incomplete. Retry to get a complete response.';
       // Fallback to non-streaming if stream endpoint not available
       if (err.message && err.message.indexOf('404') > -1) {
         try {
           var resp2 = await fetch('/api/analyze-ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ metrics: metricsText, model: selectedModel })
+            body: JSON.stringify({ metrics: metricsText, model: selectedModel }), signal: controller.signal
           });
           var data = await resp2.json();
+          if (runId !== aiRunId || signature !== analysisSignature()) return;
           if (!resp2.ok || data.error) throw new Error(data.error || 'Failed.');
           $('aiOutput').innerHTML = renderMarkdown(data.analysis || 'No response.');
           $('aiOutput').classList.add('visible');
+          aiCompletedAt = new Date().toISOString();
+          $('aiStatus').textContent = 'Analyzed ' + new Date(aiCompletedAt).toLocaleString() + ' · current inputs';
         } catch (err2) {
+          if (runId !== aiRunId || err2.name === 'AbortError') return;
           $('aiError').textContent = err2.message;
           $('aiError').classList.add('visible');
         }
@@ -3499,6 +3614,7 @@
         if (err.message === 'Failed to fetch') showConnectionBanner();
       }
     } finally {
+      if (runId !== aiRunId) return;
       $('aiBtn').disabled = false;
       $('aiBtnText').textContent = 'Run AI Analysis';
     }
@@ -3534,19 +3650,34 @@
   // HTML Download
   // ======================================================================
   window.downloadHTML = function() {
+    calculate();
     var clone = document.documentElement.cloneNode(true);
+    var styles = Array.from(document.styleSheets).map(function(sheet) {
+      try { return Array.from(sheet.cssRules).map(function(rule) { return rule.cssText; }).join('\n'); }
+      catch(e) { return ''; }
+    }).join('\n');
+    var style = document.createElement('style'); style.textContent = styles;
+    clone.querySelector('head').appendChild(style);
+    clone.querySelectorAll('link[rel=stylesheet]').forEach(function(el) { el.remove(); });
+    var reportMeta = document.createElement('section');
+    reportMeta.className = 'report-inputs';
+    reportMeta.innerHTML = '<h2>Inputs and sources</h2><p>Generated ' + esc(new Date().toLocaleString()) +
+      ' · App ' + esc(window.__APP_VERSION__ || '') + '</p>' + inputSnapshotHTML();
+    clone.querySelector('#step6').appendChild(reportMeta);
     // Remove non-result elements
     var removeSelectors = ['.workspace-nav','.analysis-context','.wizard-nav','.step-buttons','.url-row','.url-error',
       '.property-card','.scenario-toolbar','.compare-overlay','.connection-banner',
       '.results-view-tabs','[data-results-panel="whatif"]',
-      '#downloadBtn','#downloadHtmlBtn','.ai-controls select','#aiBtn','script'];
+      '#downloadBtn','#downloadHtmlBtn','.ai-controls select','#aiBtn','script',
+      'button','.tip-wrap','.draft-toolbar','#quotaGate','#rentcastUsage','#workflowStatus','.field-error', '#validationSummary'];
     removeSelectors.forEach(function(sel) {
       clone.querySelectorAll(sel).forEach(function(el) { el.remove(); });
     });
-    // Show only step 6
+    // Keep a static report with no hidden input forms or dead controls.
     clone.querySelectorAll('.step-panel').forEach(function(p) {
-      p.style.display = p.dataset.step === '6' ? 'block' : 'none';
+      if (p.dataset.step !== '6') p.remove(); else p.style.display = 'block';
     });
+    clone.querySelectorAll('[onclick],[onchange]').forEach(function(el) { el.removeAttribute('onclick'); el.removeAttribute('onchange'); });
     clone.querySelectorAll('[data-results-panel="summary"], [data-results-panel="details"]').forEach(function(panel) {
       panel.style.display = 'block';
     });
@@ -3557,7 +3688,7 @@
     a.href = URL.createObjectURL(blob);
     a.download = name + '_report.html';
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(function() { URL.revokeObjectURL(a.href); }, 1000);
   };
 
   // ======================================================================
@@ -3566,6 +3697,7 @@
   var SCENARIO_KEY = 'rpda_scenarios';
 
   var SAVE_FIELDS = [
+    'investmentStrategy','targetCoC','targetCF','targetIRR','maxSubsidy',
     'propName','purchasePrice','arv','closingCosts','rehabBudget','valueGrowth',
     'sqft','yearBuilt','buildingPct','holdYears','sellingCostPct',
     'downPayment','interestRate','loanTerm','points',
@@ -3591,6 +3723,7 @@
       sel.appendChild(opt);
     });
     $('scenarioCount').textContent = keys.length > 0 ? keys.length + ' saved' : '';
+    document.querySelectorAll('[data-saved-only]').forEach(function(el) { el.hidden = !keys.length; });
     // Also update compare selects
     ['compareA','compareB','compareC'].forEach(function(id) {
       var csel = $(id);
@@ -3606,94 +3739,29 @@
     });
   }
 
-  window.saveScenario = function() {
-    var name = $('propName').value.trim() || prompt('Name this scenario:');
-    if (!name) return;
+  window.saveScenario = function(asNew) {
+    if (!validateStep(6, true)) return;
+    calculate();
+    var name = $('scenarioName').value.trim() || $('propName').value.trim() || 'Untitled scenario';
     var scenarios = getSavedScenarios();
-    var data = {
-      propertyType: propertyType,
-      propertyTaxPolicy: propertyTaxPolicy,
-      _incentives: activeDealIncentives.map(function(item) { return Object.assign({}, item); }),
-      _sellerClaim: activeSellerClaim ? Object.assign({}, activeSellerClaim) : null
-    };
-    SAVE_FIELDS.forEach(function(f) {
-      var el = $(f);
-      if (el) {
-        if (el.classList.contains('currency-input')) {
-          var amount = optionalVal(el, 0);
-          data[f] = amount === null ? '' : amount;
-        } else {
-          data[f] = el.value;
-        }
-      }
-    });
-    // Also save checkbox state
-    data.cashPurchase = $('cashPurchase') ? $('cashPurchase').checked : false;
-    // Save calculated results for compare mode
-    if (lastCalcResults && lastCalcResults.monthlyCF !== undefined) {
-      data._results = {
-        monthlyCF: lastCalcResults.monthlyCF,
-        coc: lastCalcResults.coc,
-        capRate: lastCalcResults.capRate,
-        noi: lastCalcResults.noi,
-        dscr: lastCalcResults.dscr,
-        grm: lastCalcResults.grm,
-        breakeven: lastCalcResults.breakeven,
-        oer: lastCalcResults.oer,
-        annualCF: lastCalcResults.annualCF,
-        holdYears: lastCalcResults.holdYears,
-        preTaxProfit: lastCalcResults.preTaxProfit,
-        preTaxAnnualizedROI: lastCalcResults.preTaxAnnualizedROI,
-        preTaxIRR: lastCalcResults.preTaxIRR,
-        dealPoints: lastCalcResults.dealPoints,
-        dealMaxPoints: lastCalcResults.dealMaxPoints,
-        dealText: lastCalcResults.dealText,
-        price: lastCalcResults.price,
-        totalCashClose: lastCalcResults.totalCashClose
-      };
+    if (asNew && scenarios[name]) {
+      var base = name, n = 2; while (scenarios[name]) name = base + ' (' + n++ + ')';
     }
-    data._savedAt = new Date().toISOString();
-    scenarios[name] = data;
-    try {
-      localStorage.setItem(SCENARIO_KEY, JSON.stringify(scenarios));
-    } catch(e) {
-      if (e.name === 'QuotaExceededError' || e.code === 22) {
-        alert('Storage is full. Delete some saved scenarios to make room.');
-        return;
-      }
-      throw e;
-    }
-    refreshScenarioList();
-    $('scenarioSelect').value = name;
+    scenarios[name] = captureAnalysis();
+    try { localStorage.setItem(SCENARIO_KEY, JSON.stringify(scenarios)); }
+    catch(e) { announce('Could not save the scenario. Browser storage may be full or disabled.'); return; }
+    refreshScenarioList(); $('scenarioSelect').value = name; $('scenarioName').value = name;
+    announce('Saved scenario: ' + name); scheduleDraft();
   };
 
   window.loadScenario = function() {
-    var name = $('scenarioSelect').value;
-    if (!name) return;
-    var scenarios = getSavedScenarios();
-    var data = scenarios[name];
+    var name = $('scenarioSelect').value, data = getSavedScenarios()[name];
     if (!data) return;
-    // Set property type
-    if (data.propertyType) setPropertyType(data.propertyType);
-    activeDealIncentives = Array.isArray(data._incentives)
-      ? data._incentives.map(function(item) { return Object.assign({}, item); }) : [];
-    activeSellerClaim = data._sellerClaim ? Object.assign({}, data._sellerClaim) : null;
-    renderActiveDealIncentives();
-    // Fill fields
-    SAVE_FIELDS.forEach(function(f) {
-      var el = $(f);
-      if (el && data[f] !== undefined) el.value = data[f];
-    });
-    showPropertyTaxPolicy(data.propertyTaxPolicy || null);
-    // Checkbox
-    if ($('cashPurchase') && data.cashPurchase !== undefined) {
-      $('cashPurchase').checked = data.cashPurchase;
-      toggleCashPurchase();
-    }
-    calculate();
-    updateDpHelper();
-    goToStep(1);
+    restoreAnalysis(data); $('scenarioName').value = name;
+    calculate(); updateDpHelper(); goToStep(1);
+    announce('Loaded scenario: ' + name); scheduleDraft();
   };
+
 
   window.deleteScenario = function() {
     var name = $('scenarioSelect').value;
@@ -3711,10 +3779,12 @@
   window.openCompare = function() {
     refreshScenarioList();
     $('compareOverlay').classList.add('visible');
+    $('compareA').focus();
   };
 
   window.closeCompare = function() {
     $('compareOverlay').classList.remove('visible');
+    $('scenarioName').focus();
   };
 
   window.runCompare = function() {
@@ -3725,11 +3795,25 @@
       $('compareC').value
     ].filter(function(k) { return k && scenarios[k]; });
 
+    keys = Array.from(new Set(keys));
     if (keys.length < 2) {
       alert('Select at least 2 scenarios to compare.');
       return;
     }
 
+    if (keys.some(function(k) { return scenarios[k].propertyType === 'multi' && !scenarios[k]._unitRents; })) {
+      $('compareNote').textContent = 'Load and complete the unit rents in older multifamily scenarios, then save them before comparing.';
+      $('compareResults').innerHTML = ''; return;
+    }
+    var computed = {};
+    var commonHold = Number($('compareHold').value);
+    keys.forEach(function(k) {
+      var inputs = scenarioInputs(scenarios[k]);
+      inputs.holdYears = commonHold;
+      Object.assign(inputs,readGoalPreferences());
+      computed[k] = computeDeal(inputs);
+    });
+    $('compareNote').textContent = 'All scores use ' + readGoalPreferences().strategy + '. Returns recalculated over ' + commonHold + ' years. Older scenarios without unit rents must be loaded and completed before comparison.';
     var metrics = [
       { key: 'price', label: 'Purchase Price', fmt: fmtDollar, higher: false },
       { key: 'totalCashClose', label: 'Cash to Close', fmt: fmtDollar, higher: false },
@@ -3746,7 +3830,7 @@
       { key: 'preTaxProfit', label: 'Pre-Tax Profit', fmt: fmtDollar, higher: true },
       { key: 'preTaxAnnualizedROI', label: 'Annualized Pre-Tax ROI', fmt: fmtPct, higher: true },
       { key: 'preTaxIRR', label: 'Pre-Tax IRR', fmt: fmtPct, higher: true },
-      { key: 'dealPoints', label: 'Balanced Score', fmt: function(v, d) { return v + '/' + (d.dealMaxPoints || 100); }, higher: true }
+      { key: 'dealPoints', label: 'Goal Score', fmt: function(v, d) { return v + '/' + (d.dealMaxPoints || 100); }, higher: true }
     ];
 
     var html = '<table class="compare-table"><thead><tr><th>Metric</th>';
@@ -3756,14 +3840,14 @@
     // Deal verdict row
     html += '<tr><td><strong>Verdict</strong></td>';
     keys.forEach(function(k) {
-      var d = scenarios[k]._results || {};
+      var d = computed[k] || {};
       html += '<td><strong>' + (d.dealText || '—') + '</strong></td>';
     });
     html += '</tr>';
 
     metrics.forEach(function(m) {
       var vals = keys.map(function(k) {
-        var d = scenarios[k]._results || {};
+        var d = computed[k] || {};
         return d[m.key];
       });
 
@@ -3774,7 +3858,7 @@
 
       html += '<tr><td>' + m.label + '</td>';
       keys.forEach(function(k, i) {
-        var d = scenarios[k]._results || {};
+        var d = computed[k] || {};
         var v = vals[i];
         var cls = '';
         if (numVals.length > 1 && v !== null && v !== undefined) {
@@ -3794,25 +3878,20 @@
   // ======================================================================
   // Event Listeners
   // ======================================================================
+  ['investmentStrategy','targetCoC','targetCF','targetIRR','maxSubsidy'].forEach(function(id) {
+    $(id).addEventListener('change', function() {
+      var el = $(id);
+      if (el.type === 'number') el.value = val(el,Number(el.min),Number(el.max));
+      calculate();
+      if ($('compareOverlay').classList.contains('visible') && $('compareResults').textContent.trim()) runCompare();
+    });
+  });
   var debouncedCalc = debounce(function() { calculate(); updateDpHelper(); }, 150);
   var allInputs = document.querySelectorAll('.input-grid input, .input-grid select, .unit-rents-grid input');
   allInputs.forEach(function(inp) {
     inp.addEventListener('input', debouncedCalc);
 
-    if (inp.type === 'number') {
-      inp.addEventListener('blur', function() {
-        var v = parseFloat(inp.value);
-        var min = inp.min !== '' ? parseFloat(inp.min) : undefined;
-        var max = inp.max !== '' ? parseFloat(inp.max) : undefined;
-        if (isNaN(v)) {
-          inp.value = (min !== undefined && !isNaN(min)) ? min : 0;
-        } else {
-          if (min !== undefined && !isNaN(min) && v < min) inp.value = min;
-          if (max !== undefined && !isNaN(max) && v > max) inp.value = max;
-        }
-        calculate();
-      });
-    }
+    if (inp.type === 'number') inp.addEventListener('blur', calculate);
   });
 
   // ======================================================================
@@ -3865,7 +3944,7 @@
     'repairs & maintenance': ['Routine upkeep \u2014 service calls, leaks, turnover repairs. Sized from the building\u2019s replacement cost and age rather than a flat share of rent, because a furnace costs the same whether the unit rents for $1,200 or $3,000.', 'https://www.irs.gov/publications/p527'],
     'capex reserve': ['Money set aside each month for big-ticket replacements \u2014 roof, HVAC, water heater, flooring, windows. Component-by-component these run roughly 1.1% of replacement cost a year, which is well above the 5%-of-rent figure commonly used.', 'https://en.wikipedia.org/wiki/Capital_expenditure'],
     'appreciation \u2192 5-year return': ['How the whole deal changes if appreciation lands somewhere other than the base case. Rates come from this ZIP\u2019s own price history; the highlighted row is what the projections are currently using.', 'https://www.fhfa.gov/data/hpi'],
-    'property value growth': ['How fast the property is assumed to gain value each year. Defaults to roughly long-run inflation (2.5%), deliberately below what most areas historically did \u2014 so a deal has to work on cash flow and real appreciation stays upside rather than a load-bearing assumption. The ZIP\u2019s own measured history (FHFA repeat-sales index) drives the what-if scenarios and can lower this default further in weaker markets. Editable, and the least certain input in the model.', 'https://www.fhfa.gov/data/hpi'],
+    'property value growth': ['How fast the property is assumed to gain value each year. Defaults to the local FHFA historical market rate: ZIP growth blended toward the state when available, with state or national fallback. Conservative uses the lower of this rate and 2.5%. Editable; historical growth is not a forecast.', 'https://www.fhfa.gov/data/hpi'],
     'selling costs': ['What it costs to get out: agent commissions, title, escrow and transfer taxes. Typically 6\u20138% of the sale price, and it comes straight off any gain.', 'https://en.wikipedia.org/wiki/Closing_costs'],
     'appreciation after selling costs': ['Gain in value after estimated selling costs. Income taxes are intentionally excluded.', IP + 'a/appreciation.asp'],
     'pre-tax net sale proceeds': ['Sale price less selling costs and the remaining loan balance. Income taxes are intentionally excluded.', IP + 'n/net-proceeds.asp'],
@@ -4027,6 +4106,7 @@
 
   // === Try Example Deal ===
   window.tryExampleDeal = function() {
+    resetLocationDerivedAssumptions();
     var ex = {
       propName:'456 Oak Avenue, Arlington VA 22201',
       purchasePrice:'250000', arv:'300000', closingCosts:'7500',
@@ -4066,6 +4146,405 @@
     });
   });
 
+  // Durable input snapshots are shared by scenarios, comparisons and drafts.
+  function cloneData(value) { return JSON.parse(JSON.stringify(value)); }
+  function announce(message) { $('workflowStatus').textContent = message; }
+  function analysisSignature() { return JSON.stringify({address:$('propName').value, inputs:readInputs()}); }
+  function invalidateAI(clear) {
+    if (!clear && (!aiInputSignature || aiInputSignature === analysisSignature())) return;
+    aiRunId++;
+    if (aiController) aiController.abort();
+    aiController = null; aiInputSignature = null;
+    $('aiBtn').disabled = false; $('aiBtnText').textContent = 'Run AI Analysis';
+    $('aiOutput').classList.remove('visible'); $('aiOutput').innerHTML = '';
+    $('aiError').classList.remove('visible');
+    $('aiStatus').textContent = clear ? '' : 'Inputs changed. Run AI Analysis again for the current deal.';
+  }
+  function captureAnalysis() {
+    var data = {_schema:2, _savedAt:new Date().toISOString(), _version:window.__APP_VERSION__ || '3.2.0'};
+    SAVE_FIELDS.forEach(function(id) {
+      var el = $(id);
+      data[id] = el.classList.contains('currency-input') ? (optionalVal(el) === null ? '' : inputNumber(el.value)) : el.value;
+    });
+    data.propertyType = propertyType;
+    data.cashPurchase = $('cashPurchase').checked;
+    data._unitRents = Array.from(document.querySelectorAll('.unit-rent')).map(function(el) { return el.value.trim() === '' ? '' : inputNumber(el.value); });
+    data._inputs = cloneData(readInputs());
+    data.propertyTaxPolicy = cloneData(propertyTaxPolicy);
+    data._appreciation = cloneData(appreciationProfile);
+    data._carryingRates = cloneData(carryingRates);
+    data._incentives = cloneData(activeDealIncentives);
+    data._sellerClaim = cloneData(activeSellerClaim);
+    data._sources = cloneData(fieldSources);
+    data._manual = cloneData(userEditedFields);
+    data._scraped = cloneData(scrapedData);
+    data._hud = window.HUDRentUI ? HUDRentUI.snapshot() : null;
+    data._url = $('zillowUrl').value;
+    return data;
+  }
+  function restoreAnalysis(data) {
+    resetLocationDerivedAssumptions();
+    SAVE_FIELDS.forEach(function(id) { if (data[id] !== undefined && $(id)) $(id).value = data[id]; });
+    $('unitCount').value = data.unitCount || '2';
+    setPropertyType(data.propertyType || 'sfh'); updateUnitVisibility();
+    document.querySelectorAll('.unit-rent').forEach(function(el, i) {
+      el.value = Array.isArray(data._unitRents) && data._unitRents[i] !== undefined ? data._unitRents[i] : '';
+    });
+    if (propertyType === 'multi' && !Array.isArray(data._unitRents)) {
+      $('unitRentNote').textContent = 'This older scenario did not store unit rents. Enter them before calculating or comparing.';
+    }
+    $('cashPurchase').checked = !!data.cashPurchase; toggleCashPurchase();
+    propertyTaxPolicy = data.propertyTaxPolicy || null;
+    appreciationProfile = data._appreciation || null;
+    carryingRates = data._carryingRates || null;
+    activeDealIncentives = cloneData(data._incentives || []);
+    activeSellerClaim = cloneData(data._sellerClaim || null);
+    fieldSources = cloneData(data._sources || {});
+    userEditedFields = cloneData(data._manual || {});
+    Object.keys(fieldSources).forEach(function(id) { autoFilledFields[id] = true; });
+    scrapedData = cloneData(data._scraped || null);
+    $('zillowUrl').value = data._url || '';
+    if (scrapedData) renderListingCard(scrapedData);
+    if (window.HUDRentUI) HUDRentUI.restore(data._hud);
+    showPropertyTaxPolicy(propertyTaxPolicy); renderActiveDealIncentives();
+    formatCurrencyInputs();
+  }
+  function scenarioInputs(data) {
+    if (data._inputs && data._schema === 2) return cloneData(data._inputs);
+    // Migrate scalar fields from older scenarios without depending on the active form.
+    var inp = cloneData(defaultSnapshot._inputs);
+    Object.keys(WHATIF_FIELD_MAP).forEach(function(key) {
+      var id = WHATIF_FIELD_MAP[key];
+      if (data[id] !== undefined && data[id] !== '') inp[key] = inputNumber(data[id]);
+    });
+    ['arv','sqft','buildingPct'].forEach(function(key) { if (data[key] !== undefined) inp[key] = inputNumber(data[key]) || 0; });
+    inp.taxGrowthOverridePct = data.propertyTaxGrowth === '' || data.propertyTaxGrowth == null ? null : inputNumber(data.propertyTaxGrowth);
+    inp.isCash = !!data.cashPurchase;
+    inp.propertyType = data.propertyType || 'sfh';
+    inp.unitCount = Number(data.unitCount) || 1;
+    inp.propertyTaxPolicy = data.propertyTaxPolicy || null;
+    inp.incentives = data._incentives || [];
+    inp.totalRent = inp.propertyType === 'multi'
+      ? (data._unitRents || []).slice(0,inp.unitCount).reduce(function(sum,n) { return sum + (Number(n) || 0); },0)
+      : inputNumber(data.monthlyRent) || 0;
+    if (inp.isCash) { inp.dpPct = 100; inp.rate = 0; inp.termYears = 0; }
+    return inp;
+  }
+
+  var draftTimer;
+  function scheduleDraft() {
+    if (!draftReady || restoringDraft) return;
+    clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 300);
+  }
+  function saveDraft() {
+    if (!draftReady || restoringDraft) return;
+    var controls = {};
+    document.querySelectorAll('#searchMode input, #searchMode select, #smartMode input, #smartMode select').forEach(function(el) {
+      if (el.id && el.type !== 'file') controls[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+    });
+    var labels = {};
+    ['searchResultsTitle','smartResultsTitle','smartRentDetails','batchResultsTitle'].forEach(function(id) {
+      if ($(id)) labels[id] = $(id).textContent;
+    });
+    var data = {schema:2, savedAt:new Date().toISOString(), analysis:captureAnalysis(),
+      search:searchResults, smart:smartResults, batch:batchResults, controls:controls, labels:labels,
+      whatif:{seed:whatifSeed, overrides:whatifOverrides}, scenarioName:$('scenarioName').value,
+      verification:verificationBaseline,
+      navigation:window.AppNavigation ? AppNavigation.snapshot() : {route:location.hash},
+      maxVisitedStep:maxVisitedStep};
+    try {
+      localStorage.setItem('rpda_workspace_v2', JSON.stringify(data));
+      $('draftStatus').textContent = 'Saved on this device at ' + new Date(data.savedAt).toLocaleTimeString();
+    } catch(e) {
+      $('draftStatus').textContent = 'Draft could not be saved. Browser storage is full or unavailable; export or save important work.';
+    }
+  }
+  function restoreDraft() {
+    var data;
+    try { data = JSON.parse(localStorage.getItem('rpda_workspace_v2')); }
+    catch(e) { $('draftStatus').textContent = 'Stored draft could not be read.'; return; }
+    if (!data || data.schema !== 2 || !data.analysis) return;
+    restoringDraft = true;
+    try {
+      restoreAnalysis(data.analysis);
+      searchResults = Array.isArray(data.search) ? data.search : [];
+      smartResults = Array.isArray(data.smart) ? data.smart : [];
+      batchResults = Array.isArray(data.batch) ? data.batch : [];
+      if (searchResults.some(function(l) { return l.rentMethodVersion !== 2; })) {
+        searchResults = [];
+        showSearchStatus('Rent matching has changed. Run Search Listings again to refresh saved results.', false);
+      }
+      if (smartResults.some(function(l) { return l.rentMethodVersion !== 2; })) {
+        smartResults = [];
+        showSmartStatus('Rent matching has changed. Run Find Deals again to refresh saved results.', false);
+      }
+      refreshGoalScores(true);
+      // A refresh cannot continue an old request.
+      batchResults.forEach(function(deal) { if (deal.verification_status === 'Checking…') deal.verification_status = 'Check interrupted — retry'; });
+      Object.keys(data.controls || {}).forEach(function(id) {
+        var el = $(id); if (!el || el.type === 'file' || !el.matches('#searchMode input, #searchMode select, #smartMode input, #smartMode select')) return;
+        if (el.type === 'checkbox') el.checked = !!data.controls[id]; else el.value = data.controls[id];
+      });
+      if (searchResults.length) { renderSearchResults(); $('searchResultsContainer').style.display = ''; }
+      if (smartResults.length) { renderSmartResults(); $('smartResultsContainer').style.display = ''; }
+      if (batchResults.length) { renderBatchResults(); $('batchResultsContainer').style.display = ''; }
+      ['searchResultsTitle','smartResultsTitle','smartRentDetails','batchResultsTitle'].forEach(function(id) { if ($(id) && data.labels && data.labels[id]) $(id).textContent = data.labels[id]; });
+      whatifSeed = data.whatif && data.whatif.seed || null;
+      whatifOverrides = data.whatif && data.whatif.overrides || {};
+      maxVisitedStep = data.maxVisitedStep || 1;
+      $('scenarioName').value = data.scenarioName || '';
+      verificationBaseline = data.verification || null;
+      window.__RESTORED_NAVIGATION__ = data.navigation;
+      calculate(); renderVerificationChanges();
+      $('draftStatus').textContent = 'Restored draft from ' + new Date(data.savedAt).toLocaleString();
+    } catch(e) {
+      $('draftStatus').textContent = 'Some stored work could not be restored. Your saved scenarios are still available.';
+    } finally { restoringDraft = false; }
+  }
+  window.clearWorkspaceDraft = function() {
+    if (!confirm('Clear the current draft, imported inventory, and search results? Saved scenarios will remain.')) return;
+    clearTimeout(draftTimer); restoringDraft = true;
+    restoreAnalysis(defaultSnapshot);
+    searchResults = []; smartResults = []; batchResults = []; pendingBatchImport = null; batchRevision++;
+    ['searchResultsContainer','smartResultsContainer','batchResultsContainer'].forEach(function(id) { $(id).style.display = 'none'; });
+    $('batchImportPreview').hidden = true;
+    document.querySelectorAll('#searchMode input, #searchMode select, #smartMode input, #smartMode select').forEach(function(el) {
+      if (el.type === 'checkbox') el.checked = el.defaultChecked;
+      else if (el.tagName === 'SELECT') { var option=Array.from(el.options).find(function(o) {return o.defaultSelected;}); el.value=option ? option.value : el.options[0].value; }
+      else el.value = el.type === 'file' ? '' : el.defaultValue;
+    });
+    renderSearchResults(); renderSmartResults(); renderBatchResults();
+    ['searchResultsTitle','smartResultsTitle','smartRentDetails','batchResultsTitle'].forEach(function(id) { if ($(id)) $(id).textContent=''; });
+    $('batchCsvFile').value = ''; $('batchSheetUrl').value = '';
+    $('scenarioName').value = '';
+    maxVisitedStep = 1;
+    AppNavigation.setAnalysisOrigin('analyze');
+    AppNavigation.navigate('analyze/property');
+    try { localStorage.removeItem('rpda_workspace_v2'); } catch(e) {}
+    restoringDraft = false; calculate(); saveDraft();
+    announce('Workspace cleared. Saved scenarios are unchanged.');
+  };
+  function inputSnapshotHTML() {
+    var html = '<table class="snapshot-table"><thead><tr><th>Input</th><th>Value</th><th>Source</th></tr></thead><tbody>';
+    SAVE_FIELDS.forEach(function(id) {
+      var el = $(id);
+      var label = document.querySelector('label[for="' + id + '"]');
+      var source = userEditedFields[id] ? 'Entered by you' : SOURCE_LABELS[fieldSources[id]] || 'Default / unverified';
+      html += '<tr><td>' + esc(label ? label.childNodes[0].textContent : id) + '</td><td>' +
+        esc(el.value || 'Not entered') + '</td><td>' + esc(source) + '</td></tr>';
+    });
+    if (propertyType === 'multi') document.querySelectorAll('.unit-rent').forEach(function(el,i) {
+      if (i < Number($('unitCount').value)) html += '<tr><td>Unit ' + (i+1) + ' rent</td><td>' + esc(el.value || 'Not entered') + '</td><td>Entered rent roll</td></tr>';
+    });
+    return html + '</tbody></table>';
+  }
+  function renderInputConfidence() {
+    var fields = ['purchasePrice','monthlyRent','propertyTaxes','insurance','vacancy','maintenance','capex'];
+    if (propertyType === 'multi') fields = fields.filter(function(id) { return id !== 'monthlyRent'; });
+    var unverified = fields.filter(function(id) { return !userEditedFields[id] && !fieldSources[id]; });
+    var estimated = fields.filter(function(id) { return !userEditedFields[id] && !!fieldSources[id]; });
+    $('inputConfidence').textContent = 'Input confidence: ' + unverified.length + ' defaults to review · ' + estimated.length +
+      ' sourced estimates · ' + (fields.length-unverified.length-estimated.length) + ' entered values. Estimates and seller claims are not independently verified.';
+    $('inputSources').innerHTML = inputSnapshotHTML();
+  }
+  function applySuggestedRent(amount) {
+    if (propertyType === 'multi') {
+      $('unitRentNote').textContent = 'Selected comparison: ' + fmtDollar(amount) + '/mo. Confirm each unit’s actual rent below before using a total.';
+      announce('Enter each unit’s rent; the selected market amount has not replaced the rent roll.');
+      return;
+    }
+    $('monthlyRent').value = amount; userEditedFields.monthlyRent = true;
+    delete fieldSources.monthlyRent; calculate(); renderVerificationChanges();
+  }
+  function renderVerificationChanges() {
+    var panel = $('verificationChanges');
+    if (!verificationBaseline) { panel.hidden = true; return; }
+    var before = verificationBaseline.rent;
+    panel.textContent = 'Rent before property check: ' + (before ? fmtDollar(Number(before)) + '/mo' : 'not provided') +
+      ' → current underwriting: ' + fmtDollar(getTotalRent()) + '/mo. Review the source and assumptions before relying on the result.';
+    panel.hidden = false;
+  }
+  window.applyStressPreset = function(kind) {
+    if (!whatifSeed) whatifOpen();
+    if (!whatifSeed) return;
+    var seed = readInputs();
+    whatifSeed = cloneData(seed); whatifOverrides = {};
+    if (kind === 'rent') whatifOverrides.totalRent = seed.totalRent * 0.9;
+    if (kind === 'vacancy') whatifOverrides.vacPct = Math.min(100, seed.vacPct + 5);
+    if (kind === 'flat') whatifOverrides.valueGrowthPct = 0;
+    showResultsView('whatif'); renderWhatifSliders(); whatifRecalc();
+  };
+  function scoreDetailsHTML(score) {
+    return '<span class="score-context">' + esc((window.DealEngine.SCORE_PROFILES[score.strategy] || window.DealEngine.SCORE_PROFILES.hybrid).label) + (score.monthlyCashFlow === undefined ? ' · Unscored' : ' · Provisional') + '</span><details class="score-reasons"><summary>' + (score.stars >= 3 ? 'Screening factors' : 'Why this screen is weak') +
+      '</summary>' + score.details.map(function(d) { return '<p class="' + esc(d.cls) + '">' + esc(d.text) + '</p>'; }).join('') + '</details>';
+  }
+  window.getHUDContext = function() { return {address:$('propName').value, propertyType:propertyType, bedrooms:scrapedData && scrapedData.beds}; };
+  window.loadHUDBenchmarks = async function(kind) {
+    var rows = kind === 'search' ? searchResults : smartResults;
+    if (!rows.length) return;
+    var button = $(kind + 'HUDBtn');
+    button.disabled = true; button.textContent = 'Checking HUD…';
+    try {
+      await HUDRentUI.enrich(rows);
+      // Results are attached to the original objects; a later search is untouched.
+      if (kind === 'search') renderSearchResults(); else renderSmartResults();
+      button.textContent = 'Refresh HUD benchmarks';
+    } catch(error) {
+      if (kind === 'search') showSearchStatus(error.message, true); else showSmartStatus(error.message, true);
+      button.textContent = 'Retry HUD benchmarks';
+    } finally { button.disabled = false; }
+  };
+  window.addEventListener('hud:apply', function(event) {
+    if (propertyType !== 'sfh') return;
+    $('monthlyRent').value = event.detail.rent;
+    markSource('monthlyRent', 'hud_adjusted');
+    userEditedFields.monthlyRent = false;
+    formatCurrencyInputs(); invalidateAI(); calculate(); scheduleDraft();
+  });
+  function rentEvidenceHTML(listing) {
+    if (listing._rentOverride) return 'Manual override · applies to every result' + (window.HUDRentUI ? HUDRentUI.rowHTML(listing.hudBenchmark) : '');
+    var source = listing.rentSource ? (SOURCE_LABELS[listing.rentSource] || listing.rentSource) : 'Rent unavailable';
+    var basis = listing.rentBasis || 'Estimate method unavailable; rerun search';
+    var sample = Number(listing.rentSampleSize) || 0;
+    var confidence = ['low', 'medium', 'high'].includes(listing.rentConfidence) ? listing.rentConfidence : null;
+    var badges = '';
+    if (sample > 0) {
+      badges += '<span class="rent-evidence-badge rent-sample" title="n = ' + sample + ' rental listings used in this estimate">' +
+        '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 14V5l4-3 4 3v9M10 7l4 2v5M5 14v-3h2v3M4 6h1m2 0h1M4 8h1m2 0h1"/></svg>' +
+        '<span><strong>' + sample + '</strong> ' + (sample === 1 ? 'comp' : 'comps') + '</span></span>';
+    }
+    if (confidence) {
+      var level = {low:1, medium:2, high:3}[confidence];
+      var bars = [1,2,3].map(function(n) {
+        return '<i' + (n <= level ? ' class="filled"' : '') + '></i>';
+      }).join('');
+      badges += '<span class="rent-evidence-badge rent-confidence rent-confidence-' + confidence + '" title="Confidence in the rent estimate, not the investment return">' +
+        '<span class="rent-confidence-bars" aria-hidden="true">' + bars + '</span>' +
+        '<span>' + confidence.charAt(0).toUpperCase() + confidence.slice(1) + ' confidence</span></span>';
+    }
+    return '<div class="rent-evidence"><span class="rent-evidence-source">' + esc(source) + '</span>' +
+      '<div class="rent-evidence-badges">' + badges + '</div><small class="rent-evidence-basis">' + esc(basis) + '</small></div>' + (window.HUDRentUI ? HUDRentUI.rowHTML(listing.hudBenchmark) : '');
+  }
+  function searchMetricCells(listing) {
+    var s = listing._score || {};
+    var rent = s.rent || listing._estRent || listing.estRent;
+    return '<td>' + (rent ? fmtDollar(rent) + '/mo' : 'Unknown') + '</td>' +
+      '<td>' + (s.monthlyCashFlow === undefined ? 'Unscored' : fmtDollar(s.monthlyCashFlow) + '/mo') + '</td>' +
+      '<td>' + rentEvidenceHTML(listing) + '</td>';
+  }
+  window.toggleBatchShortlist = function(index) {
+    var deal = batchResults[index]; if (!deal) return;
+    deal.shortlisted = !deal.shortlisted; renderBatchResults(); scheduleDraft();
+  };
+  function mergeBatchResults(incoming) {
+    return incoming.map(function(deal) {
+      var old = batchResults.find(function(item) { return item.source_row === deal.source_row && item.address === deal.address; });
+      if (old) ['shortlisted','verification_status','property_check','selected_incentive_id'].forEach(function(key) {
+        if (old[key] !== undefined) deal[key] = old[key];
+      });
+      return deal;
+    });
+  }
+  function decorateBatchResults() {
+    var header = $('batchResultsTable').tHead.rows[0];
+    var order = [0,1,7,8,6,5,2,3,4,9,10,11];
+    if (!header.dataset.reordered) {
+      var cells = Array.from(header.cells); order.forEach(function(i) { header.appendChild(cells[i]); });
+      header.dataset.reordered = 'true';
+    }
+    var labels = ['Deal','Price','Market Screen','Goal Score','ZIP Rent','Stabilized CoC','Seller ROI','ROI basis','Year-1 CoC','Incentives','Confidence','Action'];
+    var cards = '';
+    Array.from($('batchResultsBody').rows).forEach(function(row,index) {
+      if (row.cells.length !== 12) return;
+      var deal = batchResults[index], cells = Array.from(row.cells);
+      order.forEach(function(i) { row.appendChild(cells[i]); });
+      Array.from(row.cells).forEach(function(cell,i) { cell.dataset.label = labels[i]; });
+      row.hidden = $('batchShortlistedOnly').checked && !deal.shortlisted;
+      var status = deal.verification_status || 'Not checked';
+      if (deal.property_check) cells[0].insertAdjacentHTML('beforeend', '<div class="batch-deal-meta">Property check: rent ' +
+        fmtDollar(deal.property_check.rent) + '/mo · cash flow ' + fmtDollar(deal.property_check.monthly_cash_flow) + '/mo</div>');
+      var action = row.cells[11];
+      action.insertAdjacentHTML('afterbegin', '<div class="batch-check-status">' + esc(status) + '</div>' +
+        '<button type="button" class="btn btn-small btn-secondary" aria-pressed="' + !!deal.shortlisted +
+        '" onclick="toggleBatchShortlist(' + index + ')">' + (deal.shortlisted ? 'Shortlisted' : 'Shortlist') + '</button>');
+      var verify = action.querySelector('.batch-analyze-btn'); verify.disabled = status === 'Checking…';
+      if (!row.hidden) {
+        cards += '<article class="batch-mobile-card"><h3>' + esc(deal.address || 'Address missing') + '</h3>' +
+          '<div class="mobile-metrics"><div>Price<strong>' + (deal.price ? fmtDollar(deal.price) : 'Unknown') + '</strong></div>' +
+          '<div>Market cash flow<strong>' + ((deal.market_screen || {}).monthly_cash_flow != null ? fmtDollar(deal.market_screen.monthly_cash_flow) + '/mo' : 'Run ZIP estimates') + '</strong></div>' +
+          '<div>' + ((deal.market_screen || {}).cash_on_cash_pct != null ? 'Market CoC' : 'Seller stabilized CoC') + '<strong>' + batchPct((deal.market_screen || {}).cash_on_cash_pct != null ? deal.market_screen.cash_on_cash_pct : deal.stabilized_coc_pct) + '</strong></div>' +
+          '<div>Score<strong>' + ((deal.market_analysis || {}).dealPoints != null ? deal.market_analysis.dealPoints + '/100' : 'Not screened') + '</strong></div></div>' +
+          '<details><summary>Claims, sources and incentives</summary>' +
+          '<p>Seller ROI: ' + batchPct(deal.claimed_roi_pct) + '</p>' + (deal.property_check ? '<p>Property check rent: ' + fmtDollar(deal.property_check.rent) + '/mo; cash flow: ' + fmtDollar(deal.property_check.monthly_cash_flow) + '/mo</p>' : '') + cells[9].innerHTML +
+          '<p>' + esc((deal.warnings || []).join(' ')) + '</p></details>' + action.innerHTML + '</article>';
+      }
+    });
+    $('batchMobileCards').innerHTML = cards || '<p>No deals match this shortlist filter.</p>';
+    $('batchAssumptions').textContent = 'ZIP ranking: 25% down · 30-year loan · 10-year hold · 3% closing costs · 7% selling costs. Rate: ' +
+      (((batchResults[0] || {}).market_screen || {}).mortgage_rate_pct ? ((batchResults[0].market_screen.mortgage_rate_pct) + '%') : 'not available') + ' (' + esc((batchResults[0] || {}).market_rate_source || 'market') + '). Full analysis uses the loan and hold assumptions you select.';
+    scheduleDraft();
+  }
+  window.commitBatchImport = function() {
+    if (!pendingBatchImport) return;
+    batchResults = pendingBatchImport.deals || []; batchRevision++;
+    batchSortCol = 'stabilized_coc_pct'; batchSortAsc = false;
+    $('batchResultsTitle').textContent = batchResults.length + ' imported deals' +
+      (pendingBatchImport.sheet_name ? ' — ' + pendingBatchImport.sheet_name : '');
+    pendingBatchImport = null; $('batchImportPreview').hidden = true;
+    $('batchResultsContainer').style.display = ''; sortAndRenderBatch();
+    showBatchStatus('Imported ' + batchResults.length + ' deals. Seller claims remain separate from calculated screens.', false);
+    if ($('batchAugmentBrochures').checked) augmentBatchBrochures();
+    saveDraft();
+  };
+  window.cancelBatchImport = function() {
+    pendingBatchImport = null; $('batchImportPreview').hidden = true;
+    showBatchStatus('Preview discarded. Existing inventory is unchanged.', false);
+  };
+  function initializeWorkflow() {
+    defaultSnapshot = captureAnalysis();
+    document.querySelectorAll('#searchStatus,#smartStatus,#batchStatus,#uploadStatus,#quotaGate,#draftStatus,#aiStatus').forEach(function(el) {
+      el.setAttribute('role','status'); el.setAttribute('aria-live','polite');
+    });
+    document.querySelectorAll('input.unit-rent').forEach(function(el,i) {
+      el.id = 'unitRent' + i; el.previousElementSibling.htmlFor = el.id;
+    });
+    document.addEventListener('input', function(event) {
+      var el = event.target;
+      if (el.closest('#singlePropertyMode,#step2,#step3,#step4') && el.id) {
+        userEditedFields[el.id] = true; delete fieldSources[el.id]; delete autoFilledFields[el.id];
+        if (el.id === 'propName') {
+          propertyGeneration++; taxRequestId++; appreciationRequestId++;
+          if (scrapedData && scrapedData.address !== el.value.trim()) scrapedData = null;
+          carryingRates = null; appreciationProfile = null;
+          $('propertyCard').classList.remove('visible');
+        }
+        invalidateAI(false);
+      }
+      scheduleDraft();
+    });
+    document.addEventListener('change', scheduleDraft);
+    document.addEventListener('app:navigation-change', scheduleDraft);
+    document.addEventListener('click', scheduleDraft);
+    window.addEventListener('pagehide', saveDraft);
+    document.addEventListener('visibilitychange', function() { if (document.hidden) saveDraft(); });
+    document.addEventListener('keydown', function(event) {
+      if (!$('compareOverlay').classList.contains('visible')) return;
+      if (event.key === 'Escape') { closeCompare(); return; }
+      if (event.key === 'Tab') {
+        var focusable = Array.from($('compareOverlay').querySelectorAll('button,select,input')).filter(function(el) { return !el.disabled; });
+        var first = focusable[0], last = focusable[focusable.length-1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    });
+    // Sortable headers remain usable without a mouse.
+    document.querySelectorAll('th.sortable').forEach(function(el) {
+      el.tabIndex = 0; el.addEventListener('keydown', function(event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); el.click(); } });
+    });
+    restoreDraft(); draftReady = true;
+  }
+
+
   // Initial setup
   setupCurrencyInputs();
   updateDpHelper();
@@ -4074,5 +4553,6 @@
   loadModels();
   loadSearchFilters();
   loadAlertPrefs();
+  initializeWorkflow();
 
 })();

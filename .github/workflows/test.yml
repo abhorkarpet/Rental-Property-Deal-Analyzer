@@ -35,3 +35,22 @@ jobs:
 
       - name: Python, API, provider, and browser tests
         run: pytest -q
+
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build runtime image
+        run: docker build -t rental-analyzer-ci .
+      - name: Verify packaged data and configurable HTTP port
+        run: |
+          docker run --rm rental-analyzer-ci python -c "from providers import appreciation; assert appreciation.is_available()"
+          docker run --detach --rm --name rental-analyzer-smoke -e PORT=8080 -p 127.0.0.1:18080:8080 rental-analyzer-ci
+          trap 'docker logs rental-analyzer-smoke; docker stop rental-analyzer-smoke' EXIT
+          curl --fail --retry 25 --retry-connrefused --retry-delay 1 http://127.0.0.1:18080/ -o /tmp/analyzer.html
+          curl --fail http://127.0.0.1:18080/static/js/app.js -o /dev/null
+          curl --fail http://127.0.0.1:18080/static/js/deal-engine.js -o /dev/null
+          curl --fail http://127.0.0.1:18080/static/js/navigation.js -o /dev/null
+          curl --fail http://127.0.0.1:18080/static/css/app.css -o /dev/null

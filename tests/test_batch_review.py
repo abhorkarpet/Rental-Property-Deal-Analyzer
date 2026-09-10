@@ -444,3 +444,24 @@ def test_batch_import_api_requires_exactly_one_source(client):
     )
     assert neither.status_code == 400
     assert both.status_code == 400
+
+
+def test_batch_uses_entered_rate_when_market_lookup_is_unavailable(client, monkeypatch):
+    deal = batch_review.parse_csv_text(RTR_CSV)["deals"][1]
+
+    async def no_rate():
+        return None
+
+    async def rentals(*_args, **_kwargs):
+        return {"stats": {"count": 12, "median": 1350, "medianDaysOnMarket": 21}}
+
+    monkeypatch.setattr(app_module, "_ensure_mortgage_rate", no_rate)
+    monkeypatch.setattr(app_module, "_search_redfin_rentals", rentals)
+    monkeypatch.setattr(app_module.rentcast, "is_configured", lambda: False)
+    for entered, expected, source in [(6.75, 6.75, "entered"), (None, 7.0, "default"), (0, 0, "entered")]:
+        response = client.post("/api/batch-review/enrich", json={"deals": [deal], "mortgage_rate_pct": entered})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["mortgage_rate"] == expected
+        assert data["mortgage_rate_source"] == source
+        assert data["deals"][0]["market_screen"]["mortgage_rate_pct"] == expected

@@ -19,7 +19,7 @@ def test_neighborhood_search_enriches_appreciation(monkeypatch):
             "location_label": "Austin, TX 78701",
         }
 
-    async def no_rentals(_location, _beds):
+    async def no_rentals(_location, _beds, **_kwargs):
         return {"rentals": [], "total": 0}
 
     monkeypatch.setattr(search, "_search_redfin_page", listings)
@@ -31,7 +31,7 @@ def test_neighborhood_search_enriches_appreciation(monkeypatch):
 
     result = asyncio.run(search.neighborhood_search("78701", {}))
 
-    assert result["listings"][0]["apprPct"] == 2.5
+    assert result["listings"][0]["apprPct"] == 4.0
     assert result["appreciation"] == APPRECIATION
 
 
@@ -44,7 +44,7 @@ def test_neighborhood_prefers_free_redfin_rents_before_rentcast(monkeypatch):
             "location_label": "Austin, TX 78701",
         }
 
-    async def rentals(_location, _beds):
+    async def rentals(_location, _beds, **_kwargs):
         return {
             "rentals": [
                 {"rent": 2200, "beds": 3},
@@ -66,12 +66,12 @@ def test_neighborhood_prefers_free_redfin_rents_before_rentcast(monkeypatch):
 
     result = asyncio.run(search.neighborhood_search("78701", {}))
 
-    assert result["listings"][0]["estRent"] == 2400
+    assert result["listings"][0]["estRent"] == 2300
     assert result["listings"][0]["rentSource"] == "redfin"
 
 
 def test_smart_deals_uses_concurrent_rate_and_listing_rent(monkeypatch):
-    async def rentals(_location, _beds):
+    async def rentals(_location, _beds, **_kwargs):
         return {
             "rentals": [
                 {"rent": 1800, "beds": 2},
@@ -115,9 +115,9 @@ def test_smart_deals_uses_concurrent_rate_and_listing_rent(monkeypatch):
     )
 
     assert result["mortgage_rate"] == 6.5
-    assert result["listings"][0]["estRent"] == 2000
-    assert result["listings"][0]["apprPct"] == 2.5
-    assert result["smart_max_price"] == 500_000
+    assert result["listings"][0]["estRent"] == 1900
+    assert result["listings"][0]["apprPct"] == 4.0
+    assert result["smart_max_price"] is None
 
 
 def test_neighborhood_search_limits_metered_zip_calls_and_surfaces_quota(monkeypatch):
@@ -130,7 +130,7 @@ def test_neighborhood_search_limits_metered_zip_calls_and_surfaces_quota(monkeyp
     async def listing_search(_location, _filters):
         return {"listings": listings, "location_label": "Austin, TX"}
 
-    async def no_rentals(_location, _beds):
+    async def no_rentals(_location, _beds, **_kwargs):
         return {"rentals": [], "total": 0}
 
     async def market_data(zip_code, _allow_overage=False):
@@ -168,7 +168,7 @@ def test_neighborhood_search_limits_metered_zip_calls_and_surfaces_quota(monkeyp
 
 
 def test_smart_deals_requires_a_rent_signal(monkeypatch):
-    async def no_rentals(_location, _beds):
+    async def no_rentals(_location, _beds, **_kwargs):
         return {"rentals": [], "stats": {"count": 0}}
 
     async def listings(_location, _filters):
@@ -190,10 +190,10 @@ def test_smart_deals_requires_a_rent_signal(monkeypatch):
         )
 
 
-def test_smart_deals_applies_price_cap_and_drops_placeholder_addresses(monkeypatch):
-    async def rentals(_location, _beds):
+def test_smart_deals_preserves_candidates_above_rent_heuristic_and_honors_price_limit(monkeypatch):
+    async def rentals(_location, _beds, **_kwargs):
         return {
-            "rentals": [{"rent": 1600, "beds": 2}] * 6,
+            "rentals": [{"address": f"{i} Rental St", "rent": 1600, "beds": 2} for i in range(6)],
             "stats": {"count": 6, "median": 1600, "low": 1600, "high": 1600},
         }
 
@@ -223,8 +223,90 @@ def test_smart_deals_applies_price_cap_and_drops_placeholder_addresses(monkeypat
         search.smart_deals(location="78701", ensure_mortgage_rate=mortgage_rate)
     )
 
-    assert result["smart_max_price"] == 400_000
+    assert result["smart_max_price"] is None
     assert [listing["address"] for listing in result["listings"]] == [
-        "1 Main St, Austin, TX 78701"
+        "1 Main St, Austin, TX 78701", "2 Main St, Austin, TX 78701"
     ]
     assert result["rent_confidence"] == "medium"
+    limited = asyncio.run(search.smart_deals(location="78701", max_price=400_000,
+                                            ensure_mortgage_rate=mortgage_rate))
+    assert limited["smart_max_price"] == 400_000
+    assert len(limited["listings"]) == 1
+
+
+@pytest.mark.parametrize('smart', [False, True])
+def test_search_matches_each_bedroom_group_and_requests_house_rentals(monkeypatch, smart):
+    async def rentals(_location, beds, property_type=None):
+        assert beds is None  # Min Beds is a sale filter, not an exact rent filter.
+        assert property_type == 'house'
+        return {'rentals': [
+            {'address': 'Rental A', 'beds': 2, 'rent': 1900},
+            {'address': 'Rental B', 'beds': 3, 'rent': 2400},
+            {'address': 'Rental C', 'beds': 3, 'rent': 2600},
+            {'address': 'Rental D', 'beds': 4, 'rent': 3100},
+        ]}
+
+    async def listings(_location, filters):
+        assert filters['min_beds'] == 2
+        return {'listings': [
+            {'address': f'{beds} Sale St', 'beds': beds, 'price': 300000}
+            for beds in [2, 3, 4, 5]
+        ]}
+
+    async def rate():
+        return 6.5
+
+    monkeypatch.setattr(search, '_search_redfin_page', listings)
+    monkeypatch.setattr(search, '_search_redfin_rentals', rentals)
+    monkeypatch.setattr(search.rentcast, 'is_configured', lambda: False)
+    monkeypatch.setattr(search.rentcast, 'usage', lambda: {})
+    monkeypatch.setattr(search.appreciation, 'resolve_appreciation', lambda **kwargs: APPRECIATION)
+    if smart:
+        result = asyncio.run(search.smart_deals(location='Manteca, CA', min_beds=2,
+                            property_type='house', ensure_mortgage_rate=rate))
+    else:
+        result = asyncio.run(search.neighborhood_search('Manteca, CA',
+                            {'min_beds': 2, 'property_type': 'house'}))
+    assert [l['estRent'] for l in result['listings']] == [1900, 2500, 3100, None]
+    assert [l['rentSampleSize'] for l in result['listings']] == [1, 2, 1, 0]
+    assert result['listings'][1]['rentConfidence'] == 'low'
+    assert result['listings'][3]['rentSource'] is None
+
+
+def test_rent_size_matching_uses_observed_comps_and_explains_shared_medians():
+    rentals = [
+        {'address': str(i), 'beds': 3, 'sqft': sqft, 'rent': rent}
+        for i, (sqft, rent) in enumerate([
+            (1000, 2000), (1050, 2100), (1100, 2200),
+            (1900, 2800), (2000, 2900), (2100, 3000),
+        ])
+    ]
+    result = {'listings': [{'beds': 3, 'sqft': sqft} for sqft in [1050, 2000, None, None]]}
+    search.attach_redfin_rents(result, {'rentals': rentals + [rentals[0]]})
+    assert [l['estRent'] for l in result['listings']] == [2100, 2900, 2500, 2500]
+    assert [l['rentSampleSize'] for l in result['listings']] == [3, 3, 6, 6]
+    assert 'size within 25%' in result['listings'][0]['rentBasis']
+    assert 'size not matched' in result['listings'][2]['rentBasis']
+
+
+def test_unmatched_bedrooms_can_use_market_fallback_without_wrong_zip(monkeypatch):
+    result = {'listings': [
+        {'address': '1 Main, CA 95336', 'beds': 3},
+        {'address': '2 Main, CA 95337', 'beds': 5},
+        {'address': '3 Main, CA 95338', 'beds': 5},
+    ]}
+    search.attach_redfin_rents(result, {'rentals': [{'beds': 3, 'rent': 2500}]})
+    calls = []
+
+    async def market(zip_code, _overage):
+        calls.append(zip_code)
+        return {'data': {'rentalData': {'medianRent': 3200}}} if zip_code == '95337' else {}
+
+    monkeypatch.setattr(search.rentcast, 'is_configured', lambda: True)
+    monkeypatch.setattr(search.rentcast, 'market_data', market)
+    monkeypatch.setattr(search.rentcast, 'usage', lambda: {})
+    asyncio.run(search.attach_market_rents(result, 'Manteca, CA'))
+    assert calls == ['95337', '95338']
+    assert result['listings'][0]['estRent'] == 2500
+    assert result['listings'][1]['rentSource'] == 'rentcast_market'
+    assert result['listings'][2]['estRent'] is None

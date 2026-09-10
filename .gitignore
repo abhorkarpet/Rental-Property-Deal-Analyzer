@@ -14,3 +14,5 @@ docs/plans
 # data/*.json.gz tables are the artifact, not these)
 data/.fhfa/
 .server.log
+
+.hud_*.json

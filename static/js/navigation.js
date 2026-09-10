@@ -62,6 +62,15 @@
     window.history[replace ? 'replaceState' : 'pushState'](null, '', hash);
   }
 
+  function refreshPropertyContext() {
+    var panel = byId('activeProperty');
+    var address = byId('activePropertyAddress');
+    if (!panel || !address) return;
+    panel.hidden = workspaceFor(currentRoute || 'analyze/property') !== 'analyze';
+    // Read the current editable property, never a previous scraped listing.
+    address.textContent = (byId('propName').value || '').trim() || 'New property — enter an address';
+  }
+
   function renderChrome(route) {
     var workspace = workspaceFor(route);
     var analysisStep = ROUTE_STEPS[route] || (route.indexOf('results/') === 0 ? 6 : 1);
@@ -72,6 +81,8 @@
     });
 
     var analysisChrome = workspace === 'analyze';
+    refreshPropertyContext();
+    byId('activeProperty').hidden = !analysisChrome;
     var wizard = byId('wizardNav');
     var scenarios = byId('scenarioToolbar');
     if (wizard) wizard.style.display = analysisChrome ? '' : 'none';
@@ -125,8 +136,8 @@
       } else {
         window.toggleSearchMode('single');
         if (route.indexOf('results/') === 0) {
-          window.goToStep(6);
-          window.showResultsView(route.split('/')[1]);
+          if (!window.goToStep(6)) { route = STEP_ROUTES[Number(document.querySelector('.step-panel.active').dataset.step)] || 'analyze/property'; writeHash(route, true); }
+          else window.showResultsView(route.split('/')[1]);
         } else {
           window.goToStep(ROUTE_STEPS[route] || 1);
         }
@@ -170,6 +181,7 @@
 
   window.AppNavigation = {
     navigate: navigate,
+    refreshPropertyContext: refreshPropertyContext,
     setAnalysisOrigin: function(origin) {
       analysisOrigin = origin || 'analyze';
       renderChrome(currentRoute || 'analyze/property');
@@ -182,8 +194,11 @@
       analysisOrigin = 'analyze';
       navigate('analyze/property', { preserveOrigin: true });
     },
-    currentRoute: function() { return currentRoute; }
+    currentRoute: function() { return currentRoute; },
+    snapshot: function() { return {route:currentRoute, origin:analysisOrigin}; }
   };
+
+  byId('propName').addEventListener('input', refreshPropertyContext);
 
   document.addEventListener('app:navigation-change', function(event) {
     if (applyingRoute) return;
@@ -205,7 +220,9 @@
     applyRoute(window.location.hash, { restoreScroll: true });
   });
 
-  var initialRoute = normalizeRoute(window.location.hash);
+  var restored = window.__RESTORED_NAVIGATION__;
+  if (restored) analysisOrigin = restored.origin || 'analyze';
+  var initialRoute = normalizeRoute(window.location.hash || (restored && restored.route));
   writeHash(initialRoute, true);
   applyRoute(initialRoute, { restoreScroll: false });
 })();
